@@ -1,0 +1,2854 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบจำลองการขยายพันธุ์พืช AR (AR Plant Propagation Simulator)</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts Kanit -->
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <!-- MediaPipe Libraries for Hand Tracking -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    * { font-family: 'Kanit', sans-serif; box-sizing: border-box; }
+    body { background-color: #0f172a; color: #f8fafc; overflow: hidden; height: 100vh; margin: 0; }
+    
+    /* Glassmorphism Styling */
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+    
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      transition: all 0.25s ease;
+    }
+    .glass-btn:hover, .glass-btn.active {
+      background: rgba(34, 197, 94, 0.3);
+      border-color: #22c55e;
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+    }
+
+    /* Custom Tool Active Highlight */
+    .tool-card.active-tool {
+      background: rgba(34, 197, 94, 0.25) !important;
+      border-color: #22c55e !important;
+      transform: scale(1.03);
+    }
+
+    /* Tool dock container: no card background of its own - fully see-through,
+       so only the individual tool cards below float over the scene. */
+    .tool-dock-panel {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+
+    /* Gift-box reward popup: pops in with a bounce, holds, then fades out */
+    @keyframes giftPopIn {
+      0%   { transform: scale(0.3) translateY(40px); opacity: 0; }
+      55%  { transform: scale(1.15) translateY(-8px); opacity: 1; }
+      75%  { transform: scale(0.95) translateY(0); opacity: 1; }
+      90%  { transform: scale(1) translateY(0); opacity: 1; }
+      100% { transform: scale(1) translateY(-10px); opacity: 0; }
+    }
+    .gift-pop-animate {
+      animation: giftPopIn 1.8s ease forwards;
+    }
+
+    /* ============================================================
+       APP SHELL DESIGN SYSTEM — "vintage seed packet & nursery bench"
+       Palette drawn from the subject: terracotta pots, seed-packet
+       paper, leaf greens, potting soil, and afternoon sun.
+       ============================================================ */
+    :root {
+      --paper:     #F3E7C9;  /* seed packet stock */
+      --paper-2:   #E7D8B4;  /* packet shadow band */
+      --ink:       #2E2116;  /* printed ink on packet */
+      --ink-soft:  #6B563F;
+      --leaf:      #4E7A3A;
+      --leaf-lite: #8CC463;
+      --clay:      #B4693E;  /* terracotta pot */
+      --clay-dark: #8E4F2C;
+      --soil:      #3B2A1C;
+      --sun:       #E8A33D;
+    }
+
+    .shell-bg {
+      background:
+        radial-gradient(ellipse at 50% 0%, #A8CE7E 0%, transparent 55%),
+        linear-gradient(#7FB25C 0%, #5C8F45 45%, #3F6B33 100%);
+    }
+    .text-ink-soft { color: #F0EAD8; }
+
+    /* --- Seed packet card --- */
+    .packet {
+      background: var(--paper);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(30, 45, 20, .38);
+      border: 1px solid rgba(46, 33, 22, .18);
+    }
+    .packet-head {
+      padding: 22px 24px 18px;
+      text-align: center;
+      background: var(--paper);
+      border-bottom: 2px dashed rgba(46, 33, 22, .28);
+    }
+    .packet-kicker {
+      font-size: .78rem; font-weight: 400; letter-spacing: .02em;
+      color: var(--ink-soft); margin-bottom: 2px;
+    }
+    .packet-title {
+      font-size: 1.65rem; font-weight: 700; line-height: 1.15;
+      color: var(--ink); margin: 0;
+    }
+    .packet-sub { font-size: .85rem; color: var(--ink-soft); margin-top: 6px; }
+    .packet-body { padding: 20px 24px 22px; }
+
+    /* Login emblem: a seal-style plant mark */
+    .login-mark { width: 76px; height: 76px; display: block; margin: 0 auto 12px; }
+
+    /* Star-marked leaderboard action - the one bold moment on the login card */
+    .btn-rank {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 14px; border: 0; cursor: pointer;
+      font-family: inherit; font-size: .92rem; font-weight: 700;
+      color: #4A3212;
+      background: linear-gradient(#F0C368, #E0A63F);
+      border-top: 1px solid rgba(46, 33, 22, .18);
+      transition: filter .18s ease;
+    }
+    .btn-rank:hover { filter: brightness(1.06); }
+    .btn-rank:active { filter: brightness(.96); }
+    .btn-rank-star { width: 18px; height: 18px; flex-shrink: 0; }
+    .packet-foot {
+      display: block; width: 100%;
+      padding: 13px; border: 0; cursor: pointer;
+      background: var(--paper-2); color: var(--ink);
+      font-family: inherit; font-size: .88rem; font-weight: 600;
+      border-top: 1px solid rgba(46, 33, 22, .14);
+      transition: background .18s ease;
+    }
+    .packet-foot:hover { background: #DCCBA2; }
+
+    /* --- Form controls --- */
+    .field-label {
+      display: block; font-size: .8rem; font-weight: 600;
+      color: var(--ink-soft); margin-bottom: 6px;
+    }
+    .field {
+      width: 100%; padding: 12px 14px;
+      font-family: inherit; font-size: .95rem; color: var(--ink);
+      background: #FFFaF0;
+      border: 1.5px solid rgba(46, 33, 22, .28);
+      border-radius: 9px;
+      transition: border-color .18s ease, box-shadow .18s ease;
+    }
+    .field:focus {
+      outline: none; border-color: var(--leaf);
+      box-shadow: 0 0 0 3px rgba(78, 122, 58, .22);
+    }
+    .field::placeholder { color: #A08B70; }
+    .select-wrap { position: relative; }
+    .select-wrap::after {
+      content: ""; position: absolute; right: 15px; top: 50%;
+      width: 8px; height: 8px; margin-top: -6px;
+      border-right: 2px solid var(--ink-soft);
+      border-bottom: 2px solid var(--ink-soft);
+      transform: rotate(45deg); pointer-events: none;
+    }
+    .select-wrap .field { appearance: none; -webkit-appearance: none; padding-right: 38px; }
+
+    .btn-primary, .btn-ghost {
+      width: 100%; padding: 13px; border-radius: 9px; cursor: pointer;
+      font-family: inherit; font-size: .95rem; font-weight: 700;
+      transition: transform .12s ease, background .18s ease, box-shadow .18s ease;
+    }
+    .btn-primary {
+      background: var(--clay); color: #FFF6E9; border: 0;
+      box-shadow: 0 3px 0 var(--clay-dark);
+    }
+    .btn-primary:hover { background: #C2764A; }
+    .btn-primary:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--clay-dark); }
+    .btn-ghost {
+      background: transparent; color: var(--ink);
+      border: 1.5px solid rgba(46, 33, 22, .35);
+    }
+    .btn-ghost:hover { background: rgba(46, 33, 22, .06); }
+
+    .rule {
+      display: flex; align-items: center; gap: 12px;
+      margin: 20px 0 18px; color: var(--ink-soft); font-size: .8rem;
+    }
+    .rule::before, .rule::after {
+      content: ""; flex: 1; height: 1px; background: rgba(46, 33, 22, .2);
+    }
+    .status-msg { margin-top: 10px; font-size: .8rem; color: var(--clay-dark); min-height: 1em; }
+
+    /* --- Nursery bench (mode select) --- */
+    .bench-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 14px; margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .bench-name {
+      font-size: 1.5rem; font-weight: 700; color: #FFFBF0; margin: 0;
+      text-shadow: 0 2px 8px rgba(20, 40, 15, .45);
+    }
+    .bench-head .packet-kicker { color: #DDECC8; }
+    .bench-hint { color: #E9F3DA; font-size: .9rem; margin-bottom: 12px; }
+    .score-chip {
+      display: flex; align-items: center; gap: 7px;
+      background: var(--paper); color: var(--ink);
+      padding: 9px 15px; border-radius: 999px; font-weight: 700;
+      box-shadow: 0 6px 16px rgba(30, 45, 20, .3);
+    }
+    .score-unit { font-size: .78rem; font-weight: 400; color: var(--ink-soft); }
+
+    .packet-grid {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
+    }
+    @media (min-width: 640px) { .packet-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+    .mode-packet {
+      position: relative; display: flex; flex-direction: column;
+      background: var(--paper); border: 0; border-radius: 12px;
+      overflow: hidden; cursor: pointer; padding: 0; text-align: left;
+      font-family: inherit;
+      box-shadow: 0 8px 20px rgba(30, 45, 20, .3);
+      transition: transform .16s ease, box-shadow .16s ease;
+    }
+    .mode-packet:hover { transform: translateY(-3px); box-shadow: 0 14px 26px rgba(30, 45, 20, .4); }
+    .mode-packet:active { transform: translateY(0); }
+    .mode-no {
+      position: absolute; top: 8px; left: 8px; z-index: 2;
+      background: rgba(46, 33, 22, .82); color: var(--paper);
+      font-size: .68rem; font-weight: 600;
+      padding: 3px 8px; border-radius: 999px;
+    }
+    .mode-art { display: block; width: 100%; height: auto; }
+    /* Photo supplied via the "Pic" sheet tab. When present it replaces the
+       built-in SVG art, keeping the same frame so the grid stays even. */
+    .mode-photo {
+      display: block; width: 100%; aspect-ratio: 100 / 84;
+      object-fit: cover; background: var(--paper-2);
+    }
+    .mode-photo[hidden] { display: none; }
+    .mode-name {
+      padding: 11px 12px 13px; font-size: .95rem; font-weight: 700;
+      color: var(--ink); border-top: 2px dashed rgba(46, 33, 22, .25);
+    }
+    @media (min-width: 640px) { .mode-packet-wide { grid-column: span 1; } }
+
+    .bench-foot { display: flex; gap: 10px; margin-top: 18px; }
+    .btn-foot {
+      flex: 1; padding: 12px; border-radius: 9px; cursor: pointer;
+      font-family: inherit; font-size: .88rem; font-weight: 600;
+      color: #F4F8EC; background: rgba(255, 255, 255, .14);
+      border: 1.5px solid rgba(255, 255, 255, .3);
+      transition: background .18s ease;
+    }
+    .btn-foot:hover { background: rgba(255, 255, 255, .24); }
+
+    /* --- Leaderboard --- */
+    .podium { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 18px; }
+    .podium:empty { display: none; }
+    .pod {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      background: var(--paper-2); border-radius: 10px 10px 0 0; padding: 10px 6px 12px;
+    }
+    .pod-1 { background: #EFC873; }
+    .pod-2 { background: #DCD3C2; }
+    .pod-3 { background: #DDB78E; }
+    .pod-medal { font-size: 1.5rem; line-height: 1; }
+    .pod-name {
+      font-size: .82rem; font-weight: 700; color: var(--ink);
+      margin-top: 5px; text-align: center; word-break: break-word;
+    }
+    .pod-score { font-size: .78rem; color: var(--ink-soft); }
+    .pod-1 { padding-bottom: 24px; }
+    .pod-2 { padding-bottom: 16px; }
+
+    .rank-list { display: flex; flex-direction: column; gap: 7px; max-height: 40vh; overflow-y: auto; }
+    .rank-row {
+      display: flex; align-items: center; gap: 11px;
+      padding: 10px 13px; border-radius: 9px;
+      background: #FFFaF0; border: 1px solid rgba(46, 33, 22, .13);
+    }
+    .rank-no { font-size: .82rem; font-weight: 700; color: var(--ink-soft); width: 1.6rem; }
+    .rank-name { flex: 1; font-size: .9rem; color: var(--ink); }
+    .rank-score { font-size: .88rem; font-weight: 700; color: var(--clay-dark); }
+    .rank-row-me { background: #FBF0D6; border-color: rgba(180, 105, 62, .5); }
+    .empty-note { text-align: center; color: var(--ink-soft); font-size: .88rem; padding: 14px 0; }
+
+    /* --- Sprouting loader: one orchestrated moment --- */
+    .sprout-stem  { animation: sproutGrow 1.5s ease-out both; transform-origin: 60px 104px; }
+    .sprout-leaf-l { animation: leafOpen .7s ease-out .45s both; transform-origin: 60px 74px; }
+    .sprout-leaf-r { animation: leafOpen .7s ease-out .75s both; transform-origin: 60px 66px; }
+    @keyframes sproutGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    @keyframes leafOpen   { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sprout-stem, .sprout-leaf-l, .sprout-leaf-r { animation: none; }
+      .mode-packet, .btn-primary { transition: none; }
+    }
+
+    /* Live dwell-hover feedback while a fingertip/cursor rests over a tool card */
+    .tool-card.hover-live {
+      border-color: rgba(74, 222, 128, 0.7) !important;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.25);
+    }
+    .hover-progress { z-index: 1; }
+
+    /* Canvas CSS */
+    #arCanvas { display: block; width: 100vw; height: 100vh; object-fit: cover; }
+    #webcamVideo { display: none; }
+  </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden select-none">
+
+  <!-- ============================================================
+       APP SHELL: loading -> login -> mode select, wraps the game.
+       Sits on top of everything (z-[100]) until a mode is entered.
+       Visual language: vintage seed packets & nursery bench.
+       ============================================================ -->
+  <div id="appShell" class="fixed inset-0 z-[100] shell-bg flex items-center justify-center p-4 overflow-y-auto">
+
+    <!-- Loading: a seed sprouting, one orchestrated moment -->
+    <div id="screenLoading" class="flex flex-col items-center">
+      <svg viewBox="0 0 120 120" class="w-32 h-32" aria-hidden="true">
+        <ellipse cx="60" cy="104" rx="34" ry="5" fill="#000" opacity="0.14"/>
+        <path d="M60 104 V58" stroke="#4E7A3A" stroke-width="5" stroke-linecap="round" class="sprout-stem"/>
+        <path d="M60 76 C44 74 36 64 35 52 C50 51 59 60 60 74 Z" fill="#6FA84A" class="sprout-leaf-l"/>
+        <path d="M60 68 C76 66 85 56 86 44 C70 43 61 52 60 66 Z" fill="#8CC463" class="sprout-leaf-r"/>
+        <ellipse cx="60" cy="104" rx="17" ry="10" fill="#6B4A2F"/>
+      </svg>
+      <p class="mt-1 text-ink-soft tracking-wide">กำลังเตรียมแปลงเพาะ…</p>
+    </div>
+
+    <!-- Login -->
+    <div id="screenLogin" class="hidden w-full max-w-[26rem]">
+      <div class="packet">
+        <div class="packet-head">
+          <svg viewBox="0 0 96 96" class="login-mark" aria-hidden="true">
+            <circle cx="48" cy="48" r="45" fill="none" stroke="#B4693E" stroke-width="2.5"/>
+            <circle cx="48" cy="48" r="39" fill="none" stroke="#B4693E" stroke-width="1" opacity="0.5"/>
+            <path d="M48 74 V40" stroke="#4E7A3A" stroke-width="5" stroke-linecap="round"/>
+            <path d="M48 54 C31 52 22 41 22 28 C39 28 47 39 48 53 Z" fill="#6FA84A"/>
+            <path d="M48 47 C65 45 74 34 74 21 C57 21 49 32 48 46 Z" fill="#8CC463"/>
+            <path d="M34 76 Q48 68 62 76" stroke="#B4693E" stroke-width="4" stroke-linecap="round" fill="none"/>
+          </svg>
+          <p class="packet-kicker">สื่อการเรียนรู้เกษตร</p>
+          <h1 class="packet-title">การขยายพันธุ์พืช</h1>
+          <p class="packet-sub">ฝึกลงมือทำ 5 วิธี จนคล่องมือ</p>
+        </div>
+
+        <div class="packet-body">
+          <label class="field-label" for="studentDropdown">ชื่อนักเรียน</label>
+          <div class="select-wrap">
+            <select id="studentDropdown" class="field">
+              <option value="">เลือกชื่อของคุณ</option>
+            </select>
+          </div>
+          <button onclick="loginAsStudent()" class="btn-primary mt-3">เข้าเรียน</button>
+
+          <div class="rule"><span>หรือ</span></div>
+
+          <label class="field-label" for="guestNameInput">เข้าแบบผู้เยี่ยมชม</label>
+          <input id="guestNameInput" type="text" placeholder="พิมพ์ชื่อของคุณ" maxlength="30" class="field" />
+          <button onclick="loginAsGuest()" class="btn-ghost mt-3">เริ่มเล่นเลย</button>
+
+          <p id="loginStatusMsg" class="status-msg"></p>
+        </div>
+
+        <button onclick="showLeaderboardScreen()" class="btn-rank">
+          <svg viewBox="0 0 24 24" class="btn-rank-star" aria-hidden="true"><path d="M12 2.6l2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 16.8 6.4 19.9l1.2-6.3L3 9.2l6.3-.8z" fill="currentColor"/></svg>
+          ดูอันดับคะแนน
+        </button>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div id="screenLeaderboard" class="hidden w-full max-w-[30rem]">
+      <div class="packet">
+        <div class="packet-head">
+          <p class="packet-kicker">ผลการฝึก</p>
+          <h1 class="packet-title">อันดับคะแนน</h1>
+        </div>
+        <div class="packet-body">
+          <div id="leaderboardPodium" class="podium"></div>
+          <div id="leaderboardList" class="rank-list">
+            <p class="empty-note">กำลังโหลด…</p>
+          </div>
+        </div>
+        <button onclick="backFromLeaderboard()" class="packet-foot">ย้อนกลับ</button>
+      </div>
+    </div>
+
+    <!-- Mode select -->
+    <div id="screenModeSelect" class="hidden w-full max-w-3xl py-6">
+      <div class="bench-head">
+        <div>
+          <p class="packet-kicker">ยินดีต้อนรับ</p>
+          <h2 id="playerNameDisplay" class="bench-name">-</h2>
+        </div>
+        <div class="score-chip">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M12 2.6l2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 16.8 6.4 19.9l1.2-6.3L3 9.2l6.3-.8z" fill="#E8A33D"/></svg>
+          <span id="menuPointsValue">0</span>
+          <span class="score-unit">คะแนน</span>
+        </div>
+      </div>
+
+      <p class="bench-hint">เลือกวิธีที่อยากฝึก</p>
+
+      <div class="packet-grid">
+        <button onclick="enterMode('cutting')" class="mode-packet">
+          <span class="mode-no">วิธีที่ 1</span>
+          <img id="modePic-cutting" class="mode-photo" alt="" hidden />
+          <svg viewBox="0 0 100 84" class="mode-art" aria-hidden="true">
+            <rect x="0" y="0" width="100" height="84" fill="#EFE3C8"/>
+            <path d="M0 62h100v22H0z" fill="#CBB893"/>
+            <path d="M34 66 L66 66 L61 82 L39 82 Z" fill="#B4693E"/>
+            <path d="M50 66 V34" stroke="#4E7A3A" stroke-width="4" stroke-linecap="round"/>
+            <path d="M50 44 C38 42 32 34 32 25 C43 25 49 33 50 43 Z" fill="#6FA84A"/>
+            <path d="M50 38 C62 36 68 28 68 19 C57 19 51 27 50 37 Z" fill="#8CC463"/>
+            <g stroke="#E8D9AE" stroke-width="2.5" stroke-linecap="round">
+              <path d="M50 70 L42 79"/><path d="M50 70 L58 79"/><path d="M50 70 L50 81"/>
+            </g>
+          </svg>
+          <span class="mode-name">การปักชำ</span>
+        </button>
+
+        <button onclick="enterMode('layering')" class="mode-packet">
+          <span class="mode-no">วิธีที่ 2</span>
+          <img id="modePic-layering" class="mode-photo" alt="" hidden />
+          <svg viewBox="0 0 100 84" class="mode-art" aria-hidden="true">
+            <rect x="0" y="0" width="100" height="84" fill="#E4EBD6"/>
+            <path d="M22 84 V16" stroke="#6B4A2F" stroke-width="9" stroke-linecap="round"/>
+            <path d="M24 40 L74 24" stroke="#7A5636" stroke-width="7" stroke-linecap="round"/>
+            <circle cx="50" cy="33" r="15" fill="#8A5E32"/>
+            <path d="M50 33 L41 47 M50 33 L50 49 M50 33 L59 47" stroke="#F2E7C6" stroke-width="2.5" stroke-linecap="round"/>
+            <rect x="35" y="26" width="6" height="15" rx="3" fill="#9DC6E8" opacity="0.9"/>
+            <rect x="59" y="26" width="6" height="15" rx="3" fill="#9DC6E8" opacity="0.9"/>
+            <circle cx="80" cy="20" r="11" fill="#6FA84A"/>
+          </svg>
+          <span class="mode-name">การตอนกิ่ง</span>
+        </button>
+
+        <button onclick="enterMode('budding')" class="mode-packet">
+          <span class="mode-no">วิธีที่ 3</span>
+          <img id="modePic-budding" class="mode-photo" alt="" hidden />
+          <svg viewBox="0 0 100 84" class="mode-art" aria-hidden="true">
+            <rect x="0" y="0" width="100" height="84" fill="#EFE3C8"/>
+            <path d="M50 84 V6" stroke="#7A5636" stroke-width="26" stroke-linecap="round"/>
+            <path d="M38 34 H62 M50 34 V60" stroke="#3E2A1F" stroke-width="3" stroke-linecap="round"/>
+            <ellipse cx="50" cy="44" rx="8" ry="13" fill="#A9CF67"/>
+            <path d="M50 44 C58 40 62 32 62 26" stroke="#4E7A3A" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+            <circle cx="64" cy="23" r="7" fill="#6FA84A"/>
+          </svg>
+          <span class="mode-name">การติดตา</span>
+        </button>
+
+        <button onclick="enterMode('inarching')" class="mode-packet">
+          <span class="mode-no">วิธีที่ 4</span>
+          <img id="modePic-inarching" class="mode-photo" alt="" hidden />
+          <svg viewBox="0 0 100 84" class="mode-art" aria-hidden="true">
+            <rect x="0" y="0" width="100" height="84" fill="#E4EBD6"/>
+            <path d="M26 84 V12" stroke="#6B4A2F" stroke-width="11" stroke-linecap="round"/>
+            <path d="M30 46 L70 22" stroke="#7A5636" stroke-width="8" stroke-linecap="round"/>
+            <path d="M74 78 L58 40" stroke="#7A5636" stroke-width="8" stroke-linecap="round"/>
+            <rect x="46" y="26" width="20" height="16" rx="4" fill="#9DC6E8" opacity="0.95" transform="rotate(-31 56 34)"/>
+            <circle cx="24" cy="14" r="12" fill="#6FA84A"/>
+            <circle cx="80" cy="76" r="9" fill="#8CC463"/>
+          </svg>
+          <span class="mode-name">การทาบกิ่ง</span>
+        </button>
+
+        <button onclick="enterMode('grafting')" class="mode-packet mode-packet-wide">
+          <span class="mode-no">วิธีที่ 5</span>
+          <img id="modePic-grafting" class="mode-photo" alt="" hidden />
+          <svg viewBox="0 0 100 84" class="mode-art" aria-hidden="true">
+            <rect x="0" y="0" width="100" height="84" fill="#EFE3C8"/>
+            <path d="M50 84 V46" stroke="#7A5636" stroke-width="22" stroke-linecap="butt"/>
+            <path d="M39 46 H61 L50 30 Z" fill="#F2E7C6"/>
+            <path d="M50 30 V10" stroke="#4E7A3A" stroke-width="6" stroke-linecap="round"/>
+            <circle cx="50" cy="10" r="9" fill="#6FA84A"/>
+            <circle cx="38" cy="17" r="6" fill="#8CC463"/>
+            <circle cx="62" cy="16" r="6" fill="#8CC463"/>
+            <rect x="38" y="40" width="24" height="10" rx="4" fill="#9DC6E8" opacity="0.95"/>
+          </svg>
+          <span class="mode-name">การเสียบยอด</span>
+        </button>
+      </div>
+
+      <div class="bench-foot">
+        <button onclick="showLeaderboardScreen()" class="btn-foot">อันดับคะแนน</button>
+        <button onclick="logoutPlayer()" class="btn-foot">ออกจากระบบ</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main AR Canvas Viewport -->
+  <canvas id="arCanvas" class="absolute inset-0 z-0"></canvas>
+  <video id="webcamVideo" playsinline></video>
+
+  <!-- Top Right: Student Points Display -->
+  <div class="absolute top-20 right-4 z-20 glass-panel rounded-xl px-3 py-2 flex items-center gap-2">
+    <span class="text-xl">⭐</span>
+    <span id="pointsValue" class="text-lg font-bold text-yellow-300">0</span>
+    <span class="text-xs text-slate-300">Point</span>
+  </div>
+
+  <!-- Top Left: Menu + AR toggle -->
+  <div class="absolute top-20 left-4 z-20 flex items-center gap-2">
+    <button onclick="backToModeSelect()" class="glass-panel rounded-xl px-3 py-2 text-xs text-slate-200 flex items-center gap-1.5 hover:text-white">
+      <i class="fa-solid fa-house text-emerald-400"></i> เมนู
+    </button>
+    <button id="toggleCamBtn" onclick="toggleCameraMode()" class="glass-panel rounded-xl px-3 py-2 text-xs text-slate-200 flex items-center gap-1.5 hover:text-white">
+      <i class="fa-solid fa-video text-emerald-400"></i> <span id="camModeText">AR (ปิด)</span>
+    </button>
+  </div>
+
+  <!-- Top Navigation: Mode Selector (5 Modes) -->
+  <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[95%] max-w-5xl">
+    <div class="glass-panel rounded-2xl p-2.5 flex items-center justify-between gap-2 overflow-x-auto">
+      <div class="flex items-center gap-2 pl-2">
+        <i class="fa-solid fa-seedling text-emerald-400 text-2xl"></i>
+        <span class="font-bold text-lg hidden md:inline text-emerald-300">การขยายพันธุ์พืช AR</span>
+      </div>
+
+      <div class="flex items-center gap-1.5 flex-1 flex-wrap justify-center">
+        <button id="mode-cutting" onclick="switchMode('cutting')" class="mode-btn glass-btn active rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
+          <i class="fa-solid fa-scissors text-xs"></i> 1. การปักชำ
+        </button>
+        <button id="mode-layering" onclick="switchMode('layering')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
+          <i class="fa-solid fa-circle-nodes text-xs"></i> 2. การตอนกิ่ง
+        </button>
+        <button id="mode-budding" onclick="switchMode('budding')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
+          <i class="fa-solid fa-eye text-xs"></i> 3. การติดตา
+        </button>
+        <button id="mode-inarching" onclick="switchMode('inarching')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
+          <i class="fa-solid fa-code-branch text-xs"></i> 4. การทาบกิ่ง
+        </button>
+        <button id="mode-grafting" onclick="switchMode('grafting')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
+          <i class="fa-solid fa-tree text-xs"></i> 5. การเสียบยอด
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Left Side: Interactive Tool Dock (2x3 grid) -->
+  <div class="absolute left-16 top-60 z-20 w-72">
+    <div class="tool-dock-panel rounded-2xl p-3">
+      <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <i class="fa-solid fa-toolbox text-emerald-400"></i> อุปกรณ์ขยายพันธุ์
+      </h3>
+
+      <div class="grid grid-cols-2 gap-2">
+        <!-- Tool 0: Hand for Grabbing -->
+        <div id="tool-hand" class="tool-card hover-target relative glass-btn bg-emerald-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="hand">
+          <div class="text-4xl">🖐️</div>
+          <div class="text-xs font-bold text-black text-center leading-tight px-1">มือจับกิ่ง</div>
+          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        </div>
+
+        <!-- Tool 1: Scissors -->
+        <div id="tool-scissors" class="tool-card hover-target relative glass-btn bg-red-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="scissors">
+          <div class="text-4xl">✂️</div>
+          <div class="text-xs font-bold text-black text-center leading-tight px-1">กรรไกรตัดแต่ง</div>
+          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        </div>
+
+        <!-- Tool 2: Knife -->
+        <div id="tool-knife" class="tool-card hover-target relative glass-btn bg-amber-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="knife">
+          <div class="text-4xl">🔪</div>
+          <div class="text-xs font-bold text-black text-center leading-tight px-1">มีดขยายพันธุ์</div>
+          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        </div>
+
+        <!-- Tool 3: Coconut Ball -->
+        <div id="tool-coconut" class="tool-card hover-target relative glass-btn bg-yellow-700/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="coconut">
+          <div class="text-4xl">🥥</div>
+          <div class="text-xs font-bold text-black text-center leading-tight px-1">ตุ้มขุยมะพร้าว</div>
+          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        </div>
+
+        <!-- Tool 4: Tape -->
+        <div id="tool-tape" class="tool-card hover-target relative glass-btn bg-blue-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="tape">
+          <div class="text-4xl">🩹</div>
+          <div class="text-xs font-bold text-black text-center leading-tight px-1">เทปพลาสติกพันกิ่ง</div>
+          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        </div>
+
+        <!-- Tool 5: Water Can -->
+        <div id="tool-water" class="tool-card hover-target relative glass-btn bg-cyan-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="water">
+          <div class="text-4xl">🚿</div>
+          <div class="text-xs font-bold text-black text-center leading-tight px-1">ฝักบัวรดน้ำ</div>
+          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Center: Step Guide Banner -->
+  <div class="absolute top-20 left-1/2 -translate-x-1/2 z-20 w-[90%] max-w-3xl">
+    <div class="glass-panel rounded-2xl p-3 sm:p-4 flex items-center flex-wrap justify-between gap-3 sm:gap-4 border-l-4 border-l-emerald-500">
+      <div class="flex items-center gap-3 min-w-0">
+        <div id="stepNumberBadge" class="w-10 h-10 shrink-0 rounded-xl bg-emerald-500/20 border border-emerald-400/50 flex items-center justify-center text-emerald-400 font-bold text-lg">
+          1
+        </div>
+        <div class="min-w-0">
+          <div id="modeTitleText" class="text-xs font-bold text-emerald-400 tracking-wider">โหมดการปักชำ (CUTTING)</div>
+          <div id="stepInstructionText" class="text-sm sm:text-base font-semibold text-white">
+            เลือก [กรรไกร ✂️] แล้วจีบนิ้วตัดกิ่งพันธุ์ดียาวบนต้นแม่ (ด้านซ้าย)
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Result Popup (Congratulations / Retry) -->
+  <div id="resultModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md hidden transition-opacity">
+    <div class="glass-panel rounded-3xl p-6 max-w-md w-[90%] text-center border-2 border-slate-700 shadow-2xl relative">
+      <div id="modalIcon" class="w-20 h-20 mx-auto rounded-full flex items-center justify-center text-4xl mb-4 bg-emerald-500/20 text-emerald-400 border border-emerald-400">
+        🎉
+      </div>
+      <h2 id="modalTitle" class="text-2xl font-bold text-white mb-2">ยินดีด้วย! ทำถูกต้องครบถ้วน</h2>
+      <p id="modalDesc" class="text-sm text-slate-300 mb-6 leading-relaxed">
+        คุณขยายพันธุ์พืชด้วยวิธีปักชำได้อย่างถูกต้องตามขั้นตอน!
+      </p>
+      <button id="modalBtn" onclick="closeModal()" class="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg">
+        ตกลง
+      </button>
+    </div>
+  </div>
+
+  <!-- Top Right: Gesture & Tracking Status Overlay -->
+  <div class="absolute top-36 right-2 sm:right-4 z-20 flex flex-col items-end gap-2">
+    <div class="glass-panel rounded-xl px-2.5 sm:px-3 py-2 text-xs font-semibold flex items-center gap-2">
+      <div id="handStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></div>
+      <span id="handStatusText" class="hidden sm:inline">โหมดแตะจอ - กด AR เพื่อใช้กล้อง</span>
+    </div>
+    
+    <div id="pinchIndicator" class="glass-panel rounded-xl px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-emerald-300 hidden flex items-center gap-1.5">
+      👌 <span class="hidden sm:inline">กำลังจีบนิ้ว (PINCH ACTIVE)</span>
+    </div>
+  </div>
+
+  <!-- Right Side: "wait for roots" time-skip circle (air layering) -->
+  <!-- Point/hold the tracked fingertip inside this circle until the ring completes
+       one full lap - see processWaitCircleHover() for the dwell logic. -->
+  <div id="waitTimeSkipPanel" class="absolute right-2 sm:right-20 top-1/2 -translate-y-1/2 z-30 hidden flex flex-col items-center gap-2">
+    <div id="waitCircleHitzone" class="relative w-32 h-32 sm:w-52 sm:h-52 flex items-center justify-center">
+      <svg viewBox="0 0 120 120" class="absolute inset-0 w-full h-full -rotate-90">
+        <circle cx="60" cy="60" r="52" fill="rgba(15,23,42,0.22)" stroke="rgba(255,255,255,0.2)" stroke-width="6" />
+        <circle id="waitRingProgress" cx="60" cy="60" r="52" fill="none" stroke="#22c55e" stroke-width="6"
+                stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7" />
+      </svg>
+      <div class="relative z-10 text-center px-2 sm:px-4">
+        <div class="text-xl sm:text-3xl mb-1">⏳</div>
+        <div id="waitCircleDaysText" class="text-xs sm:text-sm font-bold text-white leading-tight">รอระยะเวลา<br>45-60 วัน</div>
+      </div>
+    </div>
+    <div class="glass-panel rounded-xl px-3 py-1.5 text-[11px] text-slate-200 text-center max-w-[11rem] leading-snug">
+      ชี้นิ้วค้างไว้
+    </div>
+  </div>
+
+  <!-- Bottom Center: "Finish" dwell-circle - appears once all steps of the
+       current mode are complete, replacing the old Finish button. Holding a
+       fingertip inside it awards points via a gift-box popup. -->
+  <div id="finishCirclePanel" class="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 hidden flex flex-col items-center gap-2">
+    <div id="finishCircleHitzone" class="relative w-28 h-28 sm:w-36 sm:h-36 flex items-center justify-center">
+      <svg viewBox="0 0 120 120" class="absolute inset-0 w-full h-full -rotate-90">
+        <circle cx="60" cy="60" r="52" fill="rgba(34,197,94,0.28)" stroke="rgba(255,255,255,0.3)" stroke-width="6" />
+        <circle id="finishRingProgress" cx="60" cy="60" r="52" fill="none" stroke="#facc15" stroke-width="6"
+                stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7" />
+      </svg>
+      <div class="relative z-10 text-center px-2">
+        <div class="text-2xl sm:text-3xl mb-1">✅</div>
+        <div class="text-xs sm:text-sm font-bold text-white leading-tight">เสร็จสิ้น</div>
+      </div>
+    </div>
+    <div class="glass-panel rounded-xl px-3 py-1.5 text-[11px] text-slate-200 text-center max-w-[10rem] leading-snug">
+      ชี้นิ้วค้างไว้เพื่อรับรางวัล
+    </div>
+  </div>
+
+  <!-- Gift box reward popup - shown briefly when points are awarded -->
+  <div id="giftBoxPopup" class="fixed inset-0 z-40 hidden flex items-center justify-center pointer-events-none">
+    <div class="flex flex-col items-center gift-pop-animate">
+      <div class="text-8xl drop-shadow-2xl">🎁</div>
+      <div id="giftBoxAmount" class="mt-2 text-3xl font-extrabold text-yellow-300 drop-shadow-lg">+100 Point</div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('arCanvas');
+    const ctx = canvas.getContext('2d');
+    const videoElement = document.getElementById('webcamVideo');
+
+    // Resize canvas
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Global App State
+    let useARCamera = false; // starts off - the camera is only requested when the AR button is pressed
+    let currentMode = 'cutting';
+    let selectedTool = 'hand';
+    let currentStep = 1;
+    let lastEvaluatedSuccess = false;
+
+    // Hand Tracking / Mouse State
+    let handPos = { detected: false, x: canvas.width / 2, y: canvas.height / 2, isPinching: false, lastUpdate: 0 };
+    let particles = [];
+    let leafParticles = [];
+
+    // Mouse Fallback (เผื่อกล้อง AR ไม่ทำงาน หรือใช้บน PC ปกติ)
+    window.addEventListener('mousemove', (e) => {
+      if (!handPos.detected) { handPos.x = e.clientX; handPos.y = e.clientY; handPos.lastUpdate = performance.now(); }
+    });
+    canvas.addEventListener('mousedown', (e) => {
+      if (!handPos.detected) handPos.isPinching = true;
+    });
+    canvas.addEventListener('mouseup', (e) => {
+      if (!handPos.detected) handPos.isPinching = false;
+    });
+
+    // Touch fallback (phone/tablet "game mode" - tap and drag, no camera
+    // needed). Bound to window like mousemove, since the tool dock and other
+    // UI panels sit on top of the canvas and would otherwise swallow the
+    // touch before it reaches the canvas element itself. Touching down acts
+    // as the "pinch" - the same gesture the whole game already understands,
+    // so every existing interaction (grab, drag, release) works via touch
+    // with no changes to any game logic.
+    window.addEventListener('touchstart', (e) => {
+      if (!handPos.detected) {
+        const t = e.touches[0];
+        if (t) {
+          handPos.x = t.clientX; handPos.y = t.clientY;
+          handPos.isPinching = true;
+          handPos.lastUpdate = performance.now();
+        }
+      }
+    }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (!handPos.detected) {
+        const t = e.touches[0];
+        if (t) {
+          handPos.x = t.clientX; handPos.y = t.clientY;
+          handPos.lastUpdate = performance.now();
+        }
+      }
+      e.preventDefault(); // stop the page from scrolling while dragging
+    }, { passive: false });
+    window.addEventListener('touchend', (e) => {
+      if (!handPos.detected) handPos.isPinching = false;
+    }, { passive: true });
+
+    // Simulation Data per Mode
+    let simState = {
+      branchCut: false, leavesTrimmed: false, cutBranchHeld: false, cutBranchPos: { x: 0, y: 0 }, plantedBranchInPot: false, wateredLevel: 0,
+      barkStripped: false, scrapeProgress: 0, scrapeLastY: null, cambiumScraped: false, coconutWrapped: false,
+      ballWatered: false, tapeTied: false, rootsGrown: false,
+      layerHarvested: false, layerBranchHeld: false, layerBranchPos: { x: 0, y: 0 }, layerPlantedInPot: false, layerGrowWaterLevel: 0,
+      tCutMade: false, budEyeCut: false, budEyeHeld: false, budEyePos: { x: 0, y: 0 },
+      budEyeInserted: false, budTapeWrapped: false, budTaken: false, rootstockToppedOff: false, shootWaterLevel: 0,
+      inarchRootstockPulled: false, inarchRootstockHeld: false, inarchRootstockPos: { x: 0, y: 0 },
+      inarchTopCut: false, inarchRootsTrimmed: false, inarchBranchWounded: false, inarchApproached: false,
+      inarchTapeBound: false, inarchTapRootWrapped: false, inarchTapRootWatered: false, inarchTapRootTaped: false, inarchTaken: false,
+      inarchHarvested: false, inarchPlantedInPot: false, inarchGrowWaterLevel: 0,
+      rootstockTopCut: false, stemSplit: false, scionInserted: false, graftTapeBound: false,
+      scionRightBranchCut: false, scionLeftBranchCut: false, scionWedged: false, scionHeld: false, scionPos: { x: 0, y: 0 }
+    };
+
+    // Initialize Tool Selection UI
+    function selectTool(toolId, cardEl, playFeedback) {
+      if (selectedTool === toolId) return;
+      selectedTool = toolId;
+      document.querySelectorAll('.tool-card').forEach(c => c.classList.remove('active-tool'));
+      cardEl.classList.add('active-tool');
+      if (playFeedback) playSound('select');
+    }
+
+    // Mouse/desktop convenience: an instant click still selects a tool directly
+    document.querySelectorAll('.tool-card').forEach(card => {
+      card.addEventListener('click', () => {
+        selectTool(card.getAttribute('data-tool'), card, false);
+      });
+    });
+    document.getElementById('tool-hand').classList.add('active-tool'); // Default tool
+
+    // Hands-free dwell selection: hold the tracked fingertip (or mouse fallback)
+    // over a tool card for HOVER_SELECT_MS to select it, matching the on-screen
+    // instructions ("ค้างนิ้วชี้บนอุปกรณ์เพื่อเลือก").
+    const HOVER_SELECT_MS = 700;
+    const POINTER_LIVE_TIMEOUT_MS = 400;
+    let toolHoverProgress = {};
+    let toolHoverConfirmed = {};
+
+    function processToolHover(dtMs) {
+      const pointerLive = (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+
+      document.querySelectorAll('.tool-card').forEach(card => {
+        const toolId = card.getAttribute('data-tool');
+        const bar = card.querySelector('.hover-progress');
+        const rect = card.getBoundingClientRect();
+        const isHovering = pointerLive &&
+          handPos.x >= rect.left && handPos.x <= rect.right &&
+          handPos.y >= rect.top && handPos.y <= rect.bottom;
+
+        if (isHovering) {
+          card.classList.add('hover-live');
+          if (!toolHoverConfirmed[toolId]) {
+            toolHoverProgress[toolId] = (toolHoverProgress[toolId] || 0) + dtMs;
+            const pct = Math.min(100, (toolHoverProgress[toolId] / HOVER_SELECT_MS) * 100);
+            if (bar) bar.style.width = pct + '%';
+            if (toolHoverProgress[toolId] >= HOVER_SELECT_MS) {
+              toolHoverConfirmed[toolId] = true;
+              selectTool(toolId, card, true);
+            }
+          }
+        } else {
+          card.classList.remove('hover-live');
+          toolHoverProgress[toolId] = 0;
+          toolHoverConfirmed[toolId] = false;
+          if (bar) bar.style.width = '0%';
+        }
+      });
+    }
+
+    // Web Audio Synthesizer for SFX
+    function playSound(type) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const audioCtx = new AudioCtx();
+        
+        if (type === 'success') {
+          const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+          notes.forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime + idx * 0.12);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.12 + 0.3);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime + idx * 0.12);
+            osc.stop(audioCtx.currentTime + idx * 0.12 + 0.35);
+          });
+        } else if (type === 'select') {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.15);
+        } else if (type === 'error') {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(90, audioCtx.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.35);
+        }
+      } catch (e) {}
+    }
+
+    // Modal Control Functions
+    function showModal(success, title, desc) {
+      lastEvaluatedSuccess = success;
+      const modal = document.getElementById('resultModal');
+      const icon = document.getElementById('modalIcon');
+      document.getElementById('modalTitle').innerText = title;
+      document.getElementById('modalDesc').innerText = desc;
+
+      if (success) {
+        icon.innerText = "🎉";
+        icon.className = "w-20 h-20 mx-auto rounded-full flex items-center justify-center text-4xl mb-4 bg-emerald-500/20 text-emerald-400 border border-emerald-400";
+        playSound('success');
+      } else {
+        icon.innerText = "❌";
+        icon.className = "w-20 h-20 mx-auto rounded-full flex items-center justify-center text-4xl mb-4 bg-red-500/20 text-red-400 border border-red-400";
+        playSound('error');
+      }
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('resultModal').classList.add('hidden');
+      if (!lastEvaluatedSuccess) {
+        resetCurrentMode();
+      }
+    }
+
+    // Reusable "wait N days" time-skip circle, shared by any mode that needs
+    // one (air layering's root development, budding's graft taking, etc).
+    // Point/hold the tracked fingertip inside the ring; it fills up over
+    // WAIT_CIRCLE_MS and auto-confirms once it completes one full lap.
+    const WAIT_CIRCLE_MS = 2500;
+    const WAIT_RING_CIRCUMFERENCE = 326.7; // matches the SVG circle's r=52 in the markup
+    let waitCircleProgress = 0;
+    let waitCircleConfirmed = false;
+    let waitConfirmCallback = null;
+
+    function showWaitPanel(daysHtml, onConfirm) {
+      const panel = document.getElementById('waitTimeSkipPanel');
+      if (panel) panel.classList.remove('hidden');
+      const daysEl = document.getElementById('waitCircleDaysText');
+      if (daysEl && daysHtml) daysEl.innerHTML = daysHtml;
+      waitConfirmCallback = onConfirm || null;
+      waitCircleProgress = 0; waitCircleConfirmed = false; updateWaitRing();
+    }
+    function hideWaitPanel() {
+      const panel = document.getElementById('waitTimeSkipPanel');
+      if (panel) panel.classList.add('hidden');
+      waitCircleProgress = 0; waitCircleConfirmed = false; waitConfirmCallback = null; updateWaitRing();
+    }
+    function updateWaitRing() {
+      const ring = document.getElementById('waitRingProgress');
+      if (!ring) return;
+      ring.style.strokeDashoffset = WAIT_RING_CIRCUMFERENCE * (1 - waitCircleProgress / 100);
+    }
+    function processWaitCircleHover(dtMs) {
+      const panel = document.getElementById('waitTimeSkipPanel');
+      if (!panel || panel.classList.contains('hidden') || waitCircleConfirmed) return;
+
+      const hitzone = document.getElementById('waitCircleHitzone');
+      const rect = hitzone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const radius = rect.width / 2;
+      const pointerLive = (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const hovering = pointerLive && Math.hypot(handPos.x - cx, handPos.y - cy) < radius;
+
+      if (hovering) {
+        waitCircleProgress = Math.min(100, waitCircleProgress + (dtMs / WAIT_CIRCLE_MS) * 100);
+        updateWaitRing();
+        if (waitCircleProgress >= 100) {
+          waitCircleConfirmed = true;
+          if (waitConfirmCallback) waitConfirmCallback();
+        }
+      } else {
+        waitCircleProgress = 0;
+        updateWaitRing();
+      }
+    }
+    function confirmLayeringRootsGrown() {
+      simState.rootsGrown = true;
+      hideWaitPanel();
+      const pos = getLayeringBranchPos();
+      spawnSuccessSparkles(pos.x, pos.y);
+      currentStep = 7; updateStepUI();
+    }
+    function confirmBuddingTaken() {
+      simState.budTaken = true;
+      hideWaitPanel();
+      const pos = getBuddingTrunkPos();
+      spawnSuccessSparkles(pos.x, pos.y);
+      currentStep = 6; updateStepUI();
+    }
+    function confirmInarchingTaken() {
+      simState.inarchTaken = true;
+      hideWaitPanel();
+      const pos = getInarchingUnionRestPos();
+      spawnSuccessSparkles(pos.x, pos.y);
+      currentStep = 11; updateStepUI();
+    }
+
+    // "Finish" dwell-circle: shown once the current mode's steps are all
+    // complete (replaces the old Finish button). Holding a fingertip inside
+    // it for one lap awards points via the gift-box popup.
+    const FINISH_CIRCLE_MS = 1400; // a shorter hold than the day-wait circles - this is just a confirm gesture
+    let finishCircleProgress = 0;
+    let finishCircleConfirmed = false;
+    const FINAL_STEP_BY_MODE = { cutting: 5, layering: 10, budding: 8, inarching: 14, grafting: 8 };
+
+    function showFinishCirclePanel() {
+      const panel = document.getElementById('finishCirclePanel');
+      if (panel) panel.classList.remove('hidden');
+      finishCircleProgress = 0; finishCircleConfirmed = false; updateFinishRing();
+    }
+    function hideFinishCirclePanel() {
+      const panel = document.getElementById('finishCirclePanel');
+      if (panel) panel.classList.add('hidden');
+      finishCircleProgress = 0; finishCircleConfirmed = false; updateFinishRing();
+    }
+    function updateFinishRing() {
+      const ring = document.getElementById('finishRingProgress');
+      if (!ring) return;
+      ring.style.strokeDashoffset = WAIT_RING_CIRCUMFERENCE * (1 - finishCircleProgress / 100);
+    }
+    function processFinishCircleHover(dtMs) {
+      const panel = document.getElementById('finishCirclePanel');
+      if (!panel || panel.classList.contains('hidden') || finishCircleConfirmed) return;
+
+      const hitzone = document.getElementById('finishCircleHitzone');
+      const rect = hitzone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const radius = rect.width / 2;
+      const pointerLive = (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const hovering = pointerLive && Math.hypot(handPos.x - cx, handPos.y - cy) < radius;
+
+      if (hovering) {
+        finishCircleProgress = Math.min(100, finishCircleProgress + (dtMs / FINISH_CIRCLE_MS) * 100);
+        updateFinishRing();
+        if (finishCircleProgress >= 100) {
+          finishCircleConfirmed = true;
+          confirmFinishReward();
+        }
+      } else {
+        finishCircleProgress = 0;
+        updateFinishRing();
+      }
+    }
+    function confirmFinishReward() {
+      playSound('success');
+      spawnSuccessSparkles(canvas.width / 2, canvas.height * 0.35);
+      awardPoints(100);
+      showGiftBoxReward(100);
+      hideFinishCirclePanel();
+    }
+
+    function finishAndEvaluate() {
+      if (currentMode === 'cutting') {
+        if (simState.branchCut && simState.leavesTrimmed && simState.plantedBranchInPot && simState.wateredLevel >= 100) {
+          showModal(true, "ยินดีด้วย! ปักชำสำเร็จ", "คุณทำตามขั้นตอนการปักชำกิ่งได้อย่างถูกต้องสมบูรณ์ ทั้งการตัดกิ่ง เล็มใบ การปักชำ และการรดน้ำ");
+        } else {
+          showModal(false, "ขั้นตอนยังไม่ถูกต้อง!", "คุณยังทำขั้นตอนการปักชำไม่ครบถ้วน กรุณาลองใหม่อีกครั้ง");
+        }
+      } else if (currentMode === 'layering') {
+        if (simState.barkStripped && simState.cambiumScraped && simState.coconutWrapped && simState.ballWatered && simState.tapeTied && simState.rootsGrown && simState.layerHarvested && simState.layerPlantedInPot && simState.layerGrowWaterLevel >= 100) {
+          showModal(true, "ยินดีด้วย! ตอนกิ่งสำเร็จ", "คุณทำการตอนกิ่งได้ครบทุกขั้นตอน ตั้งแต่ควั่นเปลือก ขูดเยื่อเจริญ หุ้มตุ้ม รดน้ำ พันเทป รอราก ตัดทั้งตุ้มไปปลูก จนรดน้ำให้ต้นใหม่เติบโตสำเร็จ!");
+        } else showModal(false, "ขั้นตอนไม่สมบูรณ์!", "กรุณาทำขั้นตอนการตอนกิ่งให้ครบถ้วน ตั้งแต่ควั่นเปลือกจนรดน้ำให้ต้นใหม่โต");
+      } else if (currentMode === 'budding') {
+        if (simState.tCutMade && simState.budEyeCut && simState.budEyeInserted && simState.budTapeWrapped && simState.budTaken && simState.rootstockToppedOff && simState.shootWaterLevel >= 100) {
+          showModal(true, "ยินดีด้วย! ติดตาสำเร็จ", "คุณเฉือนตา นำไปวางบนแผลรูปตัว T พันเทป รอจนตาติด ตัดยอดต้นตอทิ้ง แล้วรดน้ำจนกิ่งใหม่เติบโตได้สำเร็จ!");
+        } else showModal(false, "ขั้นตอนไม่สมบูรณ์!", "กรุณาทำขั้นตอนการติดตาให้ครบถ้วน ตั้งแต่กรีดแผลจนรดน้ำให้กิ่งใหม่เติบโต");
+      } else if (currentMode === 'inarching') {
+        if (simState.inarchRootstockPulled && simState.inarchTopCut && simState.inarchRootsTrimmed && simState.inarchBranchWounded &&
+            simState.inarchApproached && simState.inarchTapeBound && simState.inarchTapRootWrapped && simState.inarchTapRootWatered && simState.inarchTapRootTaped &&
+            simState.inarchTaken && simState.inarchHarvested && simState.inarchPlantedInPot && simState.inarchGrowWaterLevel >= 100) {
+          showModal(true, "ยินดีด้วย! ทาบกิ่งสำเร็จ", "คุณเตรียมต้นตอ เปิดแผลกิ่งต้นแม่ ทาบกิ่ง พันเทป หุ้มรากแก้ว รอจนติด ตัดแยก ปักกระถาง จนรดน้ำให้ต้นใหม่เติบโตได้สำเร็จ!");
+        } else showModal(false, "ขั้นตอนไม่สมบูรณ์!", "กรุณาทำขั้นตอนการทาบกิ่งให้ครบถ้วน ตั้งแต่เตรียมต้นตอจนรดน้ำให้ต้นใหม่โต");
+      } else if (currentMode === 'grafting') {
+        if (simState.rootstockTopCut && simState.stemSplit && simState.scionRightBranchCut && simState.scionLeftBranchCut && simState.scionWedged && simState.scionInserted && simState.graftTapeBound) {
+          showModal(true, "ยินดีด้วย! เสียบยอดสำเร็จ", "คุณตัดยอดต้นตอ ผ่าลิ่ม ตัดแต่งกิ่งต้นที่เตรียมไว้จนเหลือแต่ลำต้น เฉือนโคนเป็นรูปตัว V แล้วเสียบยอดพันเทปได้อย่างสมบูรณ์!");
+        } else showModal(false, "ขั้นตอนไม่สมบูรณ์!", "กรุณาทำขั้นตอนการเสียบยอดให้ครบถ้วน ตั้งแต่ตัดยอดต้นตอจนพันเทป");
+      }
+    }
+
+    function resetCurrentMode() {
+      currentStep = 1;
+      simState = {
+        branchCut: false, leavesTrimmed: false, cutBranchHeld: false, cutBranchPos: { x: 0, y: 0 }, plantedBranchInPot: false, wateredLevel: 0,
+        barkStripped: false, scrapeProgress: 0, scrapeLastY: null, cambiumScraped: false, coconutWrapped: false,
+        ballWatered: false, tapeTied: false, rootsGrown: false,
+        layerHarvested: false, layerBranchHeld: false, layerBranchPos: { x: 0, y: 0 }, layerPlantedInPot: false, layerGrowWaterLevel: 0,
+        tCutMade: false, budEyeCut: false, budEyeHeld: false, budEyePos: { x: 0, y: 0 },
+        budEyeInserted: false, budTapeWrapped: false, budTaken: false, rootstockToppedOff: false, shootWaterLevel: 0,
+        inarchRootstockPulled: false, inarchRootstockHeld: false, inarchRootstockPos: { x: 0, y: 0 },
+        inarchTopCut: false, inarchRootsTrimmed: false, inarchBranchWounded: false, inarchApproached: false,
+        inarchTapeBound: false, inarchTapRootWrapped: false, inarchTapRootWatered: false, inarchTapRootTaped: false, inarchTaken: false,
+        inarchHarvested: false, inarchPlantedInPot: false, inarchGrowWaterLevel: 0,
+        rootstockTopCut: false, stemSplit: false, scionInserted: false, graftTapeBound: false,
+        scionRightBranchCut: false, scionLeftBranchCut: false, scionWedged: false, scionHeld: false, scionPos: { x: 0, y: 0 }
+      };
+      updateStepUI();
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.remove('active', 'bg-emerald-500/30', 'border-emerald-500');
+        if (btn.id === 'mode-' + mode) {
+          btn.classList.add('active', 'bg-emerald-500/30', 'border-emerald-500');
+        }
+      });
+      resetCurrentMode();
+    }
+
+    function toggleCameraMode() {
+      useARCamera = !useARCamera;
+      document.getElementById('camModeText').innerText = useARCamera ? "AR (เปิด)" : "AR (ปิด)";
+      if (!useARCamera) {
+        if (videoElement.srcObject) {
+          videoElement.srcObject.getTracks().forEach(t => t.stop());
+        }
+        if (cameraInstance && cameraInstance.stop) cameraInstance.stop();
+        handPos.detected = false;
+        handPos.isPinching = false;
+        const dot = document.getElementById('handStatusDot');
+        dot.classList.remove('bg-red-500', 'bg-emerald-500');
+        dot.classList.add('bg-amber-500');
+        document.getElementById('handStatusText').innerText = "โหมดแตะจอ - กด AR เพื่อใช้กล้อง";
+        document.getElementById('pinchIndicator').classList.add('hidden');
+      } else {
+        const dot = document.getElementById('handStatusDot');
+        dot.classList.remove('bg-emerald-500', 'bg-amber-500');
+        dot.classList.add('bg-red-500');
+        document.getElementById('handStatusText').innerText = "กำลังเปิดกล้อง...";
+        startCamera();
+      }
+    }
+
+    function updateStepUI() {
+      const badge = document.getElementById('stepNumberBadge');
+      const title = document.getElementById('modeTitleText');
+      const desc = document.getElementById('stepInstructionText');
+
+      badge.innerText = currentStep;
+
+      // The "wait 45-60 days" panel only ever applies to this one specific
+      // step; keeping it centralized here means every mode switch / reset
+      // (which all call updateStepUI) automatically hides it too.
+      hideWaitPanel();
+      if (currentMode === 'layering' && currentStep === 6) showWaitPanel("รอระยะเวลา<br>45-60 วัน", confirmLayeringRootsGrown);
+      else if (currentMode === 'budding' && currentStep === 5) showWaitPanel("รอระยะเวลา<br>15-20 วัน", confirmBuddingTaken);
+      else if (currentMode === 'inarching' && currentStep === 10) showWaitPanel("รอระยะเวลา<br>60-70 วัน", confirmInarchingTaken);
+
+      // The "Finish" dwell-circle only shows once all of the current mode's
+      // steps are done - centralizing it here means every mode switch/reset
+      // automatically hides it too.
+      if (currentStep === FINAL_STEP_BY_MODE[currentMode]) showFinishCirclePanel();
+      else hideFinishCirclePanel();
+
+      if (currentMode === 'cutting') {
+        title.innerText = "1. การปักชำ (CUTTING)";
+        if (currentStep === 1) desc.innerText = "เลือก [กรรไกร ✂️] แล้วจีบนิ้วตัดกิ่งพันธุ์ดียาวบนต้นแม่ (ด้านซ้าย)";
+        else if (currentStep === 2) desc.innerText = "เลือก [มือจับ 🖐️] แล้วจีบนิ้วลากกิ่ง (ใบยังเต็มขนาด) ไปปักลงในกระถางดินเปล่า (ด้านขวา)";
+        else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] จีบนิ้วเล็มใบของกิ่งที่ปักไว้ให้เล็กลง เพื่อลดการคายน้ำ";
+        else if (currentStep === 4) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำกิ่งปักชำจนรากเริ่มงอก";
+        else if (currentStep === 5) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
+      } else if (currentMode === 'layering') {
+        title.innerText = "2. การตอนกิ่ง (AIR LAYERING)";
+        if (currentStep === 1) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วที่กิ่งขวา (กิ่งยาว) เพื่อควั่นเปลือกไม้ออกเป็นวงรอบกิ่ง";
+        else if (currentStep === 2) desc.innerText = "ใช้ [มีด 🔪] จีบนิ้วค้างไว้ แล้วขยับขึ้น-ลงซ้ำๆ ที่รอยควั่น เพื่อขูดเยื่อเจริญ (cambium) ออกให้หมดตามเกจ";
+        else if (currentStep === 3) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] นำไปจีบนิ้วหุ้มรอบบริเวณที่ขูดแล้ว";
+        else if (currentStep === 4) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำตุ้มขุยมะพร้าวให้ชื้น ก่อนห่อหุ้ม";
+        else if (currentStep === 5) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันรอบตุ้มตอนให้แน่น (เทปใสมองเห็นตุ้มด้านในได้) กันความชื้นระเหยออก";
+        else if (currentStep === 6) desc.innerText = "พันเทปเรียบร้อย ต้องรอให้กิ่งออกราก — ชี้นิ้วค้างไว้ที่วงกลมทางขวา จนหลอดครบรอบ";
+        else if (currentStep === 7) desc.innerText = "รากงอกในตุ้มดีแล้ว! เลือก [กรรไกร ✂️] จีบนิ้วตัดกิ่งตอน (พร้อมตุ้ม) ออกจากต้นแม่";
+        else if (currentStep === 8) desc.innerText = "เลือก [มือจับ 🖐️] แล้วจีบนิ้วลากกิ่งตอนทั้งตุ้ม ไปปักลงกระถางใหม่ (ด้านขวา)";
+        else if (currentStep === 9) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำต้นที่ปักใหม่ ให้เจริญเติบโตสูงขึ้น";
+        else if (currentStep === 10) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
+      } else if (currentMode === 'budding') {
+        title.innerText = "3. การติดตา (BUDDING)";
+        if (currentStep === 1) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วกรีดแผลรูปตัว T บนลำต้นตอ (ซ้าย)";
+        else if (currentStep === 2) desc.innerText = "ใช้ [มีด 🔪] จีบนิ้วที่ตาบนลำต้นของกิ่งพันธุ์ดี (ขวา) เพื่อเฉือนตาออกมา";
+        else if (currentStep === 3) desc.innerText = "เลือก [มือจับ 🖐️] จีบนิ้วหยิบตาที่เฉือนออกมา ไปวางลงบนแผลรูปตัว T";
+        else if (currentStep === 4) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันแผลให้แน่น ปิดทับตาลงไปให้สนิทกับเนื้อไม้";
+        else if (currentStep === 5) desc.innerText = "พันเทปเรียบร้อย ต้องรอดูว่าตาจะติดไหม — ชี้นิ้วค้างไว้ที่วงกลมทางขวา จนหลอดครบรอบ";
+        else if (currentStep === 6) desc.innerText = "ตาติดสำเร็จ มีกิ่งใหม่แตกออกมาแล้ว! เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำกิ่งใหม่ที่แตกออกมา ให้เจริญเติบโตขึ้น";
+        else if (currentStep === 7) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดยอดต้นตอทิ้งเหนือรอยตาที่ติด เพื่อบังคับให้ตาใหม่เติบโตแทน";
+        else if (currentStep === 8) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
+      } else if (currentMode === 'inarching') {
+        title.innerText = "4. การทาบกิ่ง (INARCHING)";
+        if (currentStep === 1) desc.innerText = "เลือก [มือจับ 🖐️] จีบนิ้วยกต้นตอ (ขวา) ออกจากกระถาง";
+        else if (currentStep === 2) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดยอดลำต้นต้นตอทิ้ง (เหนือรากขึ้นไปประมาณ 20 ซม.) - จุดบนลำต้น";
+        else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] จีบนิ้วตัดรากแขนงออก ให้เหลือแต่รากแก้วเส้นเดียว - จุดที่ราก";
+        else if (currentStep === 4) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วเปิดแผลที่ปลายกิ่งโค้งของต้นแม่ (ซ้าย)";
+        else if (currentStep === 5) desc.innerText = "เลือก [มือจับ 🖐️] จีบนิ้วนำต้นตอที่เตรียมไว้ ไปทาบกับแผลบนกิ่งของต้นแม่";
+        else if (currentStep === 6) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันรอยทาบให้แน่น";
+        else if (currentStep === 7) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] จีบนิ้วนำมาใส่ตรงรากแก้วที่ห้อยอยู่";
+        else if (currentStep === 8) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำตุ้มขุยมะพร้าวให้ชื้น";
+        else if (currentStep === 9) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันตุ้มขุยมะพร้าวให้แน่น ไม่ให้หลุด";
+        else if (currentStep === 10) desc.innerText = "พันเสร็จแล้ว ต้องรอให้รอยทาบติดกัน — ชี้นิ้วค้างไว้ที่วงกลมทางขวา จนหลอดครบรอบ";
+        else if (currentStep === 11) desc.innerText = "รอยทาบติดสำเร็จ! เลือก [กรรไกร ✂️] จีบนิ้วตัดที่ใต้เทปนิดเดียว (เหลือตอกิ่งไว้ที่ต้นแม่) เพื่อให้ได้ทั้งกิ่งที่มีใบ พร้อมรอยทาบและตุ้ม ไปปลูก";
+        else if (currentStep === 12) desc.innerText = "เลือก [มือจับ 🖐️] แล้วจีบนิ้วลากกิ่งที่ตัดออกมา ไปปักลงกระถางใหม่";
+        else if (currentStep === 13) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำต้นที่ปักใหม่ ให้เจริญเติบโต";
+        else if (currentStep === 14) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
+      } else if (currentMode === 'grafting') {
+        title.innerText = "5. การเสียบยอด (CLEFT GRAFTING)";
+        if (currentStep === 1) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดยอดต้นตอให้เรียบ";
+        else if (currentStep === 2) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วผ่าเปิดแผลกลางลำต้นตอเป็นรอยลิ่ม";
+        else if (currentStep === 3) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดแต่งกิ่งขวาของต้นที่เตรียมไว้ (ขวา) ออก";
+        else if (currentStep === 4) desc.innerText = "ใช้ [กรรไกร ✂️] จีบนิ้วตัดแต่งกิ่งซ้ายออกด้วย";
+        else if (currentStep === 5) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วเฉือนโคนต้นให้เป็นรูปตัว V เพื่อเตรียมเสียบยอด";
+        else if (currentStep === 6) desc.innerText = "เลือก [มือจับ 🖐️] จับต้นที่เตรียมไว้ ลากมาเสียบลงในรอยผ่าของต้นตอ";
+        else if (currentStep === 7) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันแผลรอยเสียบยอดให้แน่นสนิท!";
+        else if (currentStep === 8) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
+      }
+    }
+
+    function processStepInteractions() {
+      const isPinch = handPos.isPinching;
+      const groundY = canvas.height * 0.85;
+
+      if (currentMode === 'cutting') {
+        const targetCutX = canvas.width * 0.3 + 125;
+        const targetCutY = groundY - 300;
+        const pot2X = canvas.width * 0.7; const pot2Y = groundY - 20;
+
+        if (currentStep === 1 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - targetCutX, handPos.y - targetCutY) < 70) {
+            simState.branchCut = true;
+            simState.cutBranchPos = { x: targetCutX, y: targetCutY + 20 };
+            currentStep = 2; updateStepUI(); spawnLeafParticles(targetCutX, targetCutY);
+          }
+        }
+        // Step 2: grab the freshly-cut branch (leaves still full-size) and plant it in the empty pot
+        else if (currentStep === 2 && selectedTool === 'hand') {
+          if (isPinch && !simState.plantedBranchInPot) {
+            if (Math.hypot(handPos.x - simState.cutBranchPos.x, handPos.y - simState.cutBranchPos.y) < 90 || simState.cutBranchHeld) {
+              simState.cutBranchHeld = true; simState.cutBranchPos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.cutBranchHeld) {
+            if (Math.hypot(handPos.x - pot2X, handPos.y - pot2Y) < 120) {
+              simState.cutBranchHeld = false; simState.plantedBranchInPot = true; currentStep = 3; updateStepUI();
+            } else { simState.cutBranchHeld = false; }
+          }
+        }
+        // Step 3: now that it's planted, trim the leaves smaller to reduce transpiration
+        else if (currentStep === 3 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - pot2X, handPos.y - (groundY - 15)) < 90) {
+            simState.leavesTrimmed = true; currentStep = 4; updateStepUI(); spawnLeafParticles(pot2X, groundY - 90);
+          }
+        }
+        else if (currentStep === 4 && selectedTool === 'water' && isPinch) {
+          const potWaterX = canvas.width * 0.7; const potWaterY = groundY - 50;
+          if (Math.hypot(handPos.x - potWaterX, handPos.y - potWaterY) < 120) {
+            spawnWaterParticles(handPos.x, handPos.y);
+            simState.wateredLevel += 2.0;
+            if (simState.wateredLevel >= 100) { spawnSuccessSparkles(potWaterX, potWaterY); currentStep = 5; updateStepUI(); }
+          }
+        }
+      }
+
+      else if (currentMode === 'layering') {
+        // Use the RIGHT branch (longer, less obscured by the canopy leaf clouds)
+        const { x: branchX, y: branchY } = getLayeringBranchPos();
+        const { x: newPotX, y: newPotY } = getLayeringNewPotPos();
+        const nearBranch = Math.hypot(handPos.x - branchX, handPos.y - branchY) < 80;
+
+        if (currentStep === 1 && selectedTool === 'knife' && isPinch) {
+          if (nearBranch) {
+            simState.barkStripped = true; currentStep = 2; updateStepUI(); spawnLeafParticles(branchX, branchY);
+          }
+        }
+        // Step 2: scrape the cambium by actually moving the knife up and down at
+        // the target (not just holding still) until the gauge fills up. The
+        // multiplier is tuned so a natural, sustained scraping motion takes
+        // roughly 5 seconds - a quick single swipe should barely move the gauge.
+        else if (currentStep === 2) {
+          if (selectedTool === 'knife' && isPinch && nearBranch) {
+            if (simState.scrapeLastY !== null) {
+              simState.scrapeProgress = Math.min(100, simState.scrapeProgress + Math.abs(handPos.y - simState.scrapeLastY) * 0.09);
+            }
+            simState.scrapeLastY = handPos.y;
+            if (simState.scrapeProgress >= 100) {
+              simState.cambiumScraped = true; currentStep = 3; updateStepUI(); simState.scrapeLastY = null;
+            }
+          } else {
+            simState.scrapeLastY = null;
+          }
+        }
+        else if (currentStep === 3 && selectedTool === 'coconut' && isPinch) {
+          if (nearBranch && simState.cambiumScraped) {
+            simState.coconutWrapped = true; currentStep = 4; updateStepUI();
+          }
+        }
+        // Step 4: water the wrapped husk so it's moist before sealing with tape
+        else if (currentStep === 4 && selectedTool === 'water' && isPinch) {
+          if (nearBranch && simState.coconutWrapped) {
+            spawnWaterParticles(handPos.x, handPos.y);
+            simState.ballWatered = true; currentStep = 5; updateStepUI();
+          }
+        }
+        else if (currentStep === 5 && selectedTool === 'tape' && isPinch) {
+          if (nearBranch && simState.ballWatered) {
+            simState.tapeTied = true; currentStep = 6; updateStepUI();
+          }
+        }
+        // Step 6 has no canvas interaction - the person points/holds at the
+        // wait-circle instead (see confirmLayeringRootsGrown()), which
+        // advances to step 7.
+
+        // Step 7: once rooted, cut the layered branch (with its wrap ball) off the mother tree
+        else if (currentStep === 7 && selectedTool === 'scissors' && isPinch) {
+          if (nearBranch) {
+            simState.layerHarvested = true;
+            simState.layerBranchPos = { x: branchX, y: branchY };
+            currentStep = 8; updateStepUI(); spawnLeafParticles(branchX, branchY);
+          }
+        }
+        // Step 8: grab the harvested, already-rooted cutting (wrap ball still attached) and plant it
+        else if (currentStep === 8 && selectedTool === 'hand') {
+          if (isPinch && !simState.layerPlantedInPot) {
+            if (Math.hypot(handPos.x - simState.layerBranchPos.x, handPos.y - simState.layerBranchPos.y) < 90 || simState.layerBranchHeld) {
+              simState.layerBranchHeld = true; simState.layerBranchPos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.layerBranchHeld) {
+            if (Math.hypot(handPos.x - newPotX, handPos.y - newPotY) < 120) {
+              simState.layerBranchHeld = false; simState.layerPlantedInPot = true; currentStep = 9; updateStepUI();
+            } else { simState.layerBranchHeld = false; }
+          }
+        }
+        // Step 9: water the newly planted cutting so it grows taller
+        else if (currentStep === 9 && selectedTool === 'water' && isPinch) {
+          if (Math.hypot(handPos.x - newPotX, handPos.y - (newPotY - 40)) < 110) {
+            spawnWaterParticles(handPos.x, handPos.y);
+            simState.layerGrowWaterLevel = Math.min(100, simState.layerGrowWaterLevel + 2.0);
+            if (simState.layerGrowWaterLevel >= 100) { spawnSuccessSparkles(newPotX, newPotY - 40); currentStep = 10; updateStepUI(); }
+          }
+        }
+      }
+
+      else if (currentMode === 'budding') {
+        const { x: trunkX, y: trunkY } = getBuddingTrunkPos();
+        const { x: budSrcX, y: budSrcY } = getBuddingBudSourcePos();
+        const { x: topCutX, y: topCutY } = getBuddingTopCutPos();
+
+        if (currentStep === 1 && selectedTool === 'knife' && isPinch) {
+          if (Math.hypot(handPos.x - trunkX, handPos.y - trunkY) < 80) { simState.tCutMade = true; currentStep = 2; updateStepUI(); }
+        }
+        // Step 2: cut the bud off the donor tree's stem - a real, visible chip pops free
+        else if (currentStep === 2 && selectedTool === 'knife' && isPinch) {
+          if (Math.hypot(handPos.x - budSrcX, handPos.y - budSrcY) < 70) {
+            simState.budEyeCut = true;
+            simState.budEyePos = { x: budSrcX, y: budSrcY };
+            currentStep = 3; updateStepUI(); spawnLeafParticles(budSrcX, budSrcY);
+          }
+        }
+        // Step 3: grab the harvested bud chip and place it on the T-cut
+        else if (currentStep === 3 && selectedTool === 'hand') {
+          if (isPinch && !simState.budEyeInserted) {
+            if (Math.hypot(handPos.x - simState.budEyePos.x, handPos.y - simState.budEyePos.y) < 80 || simState.budEyeHeld) {
+              simState.budEyeHeld = true; simState.budEyePos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.budEyeHeld) {
+            if (Math.hypot(handPos.x - trunkX, handPos.y - trunkY) < 90) {
+              simState.budEyeHeld = false; simState.budEyeInserted = true;
+              simState.budEyePos = { x: trunkX, y: trunkY };
+              currentStep = 4; updateStepUI();
+            } else { simState.budEyeHeld = false; }
+          }
+        }
+        else if (currentStep === 4 && selectedTool === 'tape' && isPinch) {
+          if (Math.hypot(handPos.x - trunkX, handPos.y - trunkY) < 80 && simState.budEyeInserted) {
+            simState.budTapeWrapped = true; currentStep = 5; updateStepUI();
+          }
+        }
+        // Step 5 has no canvas interaction - the wait-circle (confirmBuddingTaken)
+        // advances to step 6 once the person holds it for one full lap.
+
+        // Step 6: once the graft has taken, water the new shoot so it grows bigger
+        else if (currentStep === 6 && selectedTool === 'water' && isPinch) {
+          const shootBaseX = trunkX; const shootBaseY = trunkY - 20;
+          if (Math.hypot(handPos.x - shootBaseX, handPos.y - shootBaseY) < 100) {
+            spawnWaterParticles(handPos.x, handPos.y);
+            simState.shootWaterLevel = Math.min(100, simState.shootWaterLevel + 2.0);
+            if (simState.shootWaterLevel >= 100) { spawnSuccessSparkles(shootBaseX, shootBaseY); currentStep = 7; updateStepUI(); }
+          }
+        }
+        // Step 7: cut off the rootstock's original top - now the last active
+        // step, forcing all growth into the already-established new shoot
+        else if (currentStep === 7 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - topCutX, handPos.y - topCutY) < 70) {
+            simState.rootstockToppedOff = true; currentStep = 8; updateStepUI(); spawnLeafParticles(topCutX, topCutY);
+          }
+        }
+      }
+
+      else if (currentMode === 'inarching') {
+        const potPos = getInarchingPotPos();
+        const origin = getInarchingBranchOrigin();
+        const union = getInarchingUnionPos();
+
+        // Step 1: pull the rootstock out of its pot
+        if (currentStep === 1 && selectedTool === 'hand') {
+          if (isPinch && !simState.inarchRootstockPulled) {
+            if (Math.hypot(handPos.x - potPos.x, handPos.y - (potPos.y - 100)) < 150 || simState.inarchRootstockHeld) {
+              simState.inarchRootstockHeld = true;
+              simState.inarchRootstockPos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.inarchRootstockHeld) {
+            simState.inarchRootstockHeld = false;
+            simState.inarchRootstockPulled = true;
+            currentStep = 2; updateStepUI();
+          }
+        }
+        // Step 2: cut the top of the stem off - target is up on the STEM,
+        // above the base point
+        else if (currentStep === 2 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y - 135)) < 90) {
+            simState.inarchTopCut = true; currentStep = 3; updateStepUI(); spawnLeafParticles(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y - 135);
+          }
+        }
+        // Step 3: trim the lateral roots - target is down among the ROOTS,
+        // below the base point (a different spot from step 2's target, so a
+        // single held pinch can't blow through both steps at once)
+        else if (currentStep === 3 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 45)) < 90) {
+            simState.inarchRootsTrimmed = true; currentStep = 4; updateStepUI();
+          }
+        }
+        // Step 4: open a wound on the mother tree's curved branch, near its base
+        else if (currentStep === 4 && selectedTool === 'knife' && isPinch) {
+          if (Math.hypot(handPos.x - union.x, handPos.y - union.y) < 70) {
+            simState.inarchBranchWounded = true; currentStep = 5; updateStepUI();
+          }
+        }
+        // Step 5: carry the prepared rootstock over to approach the wound
+        else if (currentStep === 5 && selectedTool === 'hand') {
+          if (isPinch && !simState.inarchApproached) {
+            if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - simState.inarchRootstockPos.y) < 90 || simState.inarchRootstockHeld) {
+              simState.inarchRootstockHeld = true;
+              simState.inarchRootstockPos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.inarchRootstockHeld) {
+            if (Math.hypot(handPos.x - union.x, handPos.y - union.y) < 100) {
+              simState.inarchRootstockHeld = false;
+              simState.inarchApproached = true;
+              simState.inarchRootstockPos = getInarchingUnionRestPos();
+              currentStep = 6; updateStepUI();
+            } else { simState.inarchRootstockHeld = false; }
+          }
+        }
+        // Step 6: tape the union together
+        else if (currentStep === 6 && selectedTool === 'tape' && isPinch) {
+          if (Math.hypot(handPos.x - union.x, handPos.y - union.y) < 90) {
+            simState.inarchTapeBound = true; currentStep = 7; updateStepUI();
+          }
+        }
+        // Step 7: wrap a coconut-husk ball around the dangling taproot
+        else if (currentStep === 7 && selectedTool === 'coconut' && isPinch) {
+          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 44)) < 100) {
+            simState.inarchTapRootWrapped = true; currentStep = 8; updateStepUI();
+          }
+        }
+        // Step 8: water the husk ball to keep it moist
+        else if (currentStep === 8 && selectedTool === 'water' && isPinch) {
+          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 44)) < 100) {
+            spawnWaterParticles(handPos.x, handPos.y);
+            simState.inarchTapRootWatered = true; currentStep = 9; updateStepUI();
+          }
+        }
+        // Step 9: tape the husk ball so it doesn't fall off
+        else if (currentStep === 9 && selectedTool === 'tape' && isPinch) {
+          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 44)) < 100 && simState.inarchTapRootWrapped) {
+            simState.inarchTapRootTaped = true; currentStep = 10; updateStepUI();
+          }
+        }
+        // Step 10 has no canvas interaction - the wait-circle (confirmInarchingTaken)
+        // advances to step 11 once held for one full lap.
+
+        // Step 11: cut just below (trunk-side of) the tape - not all the way
+        // at the trunk - so a short stub is left on the mother tree, while
+        // the whole grafted branch (with its leafy segment) comes away
+        // together with the rootstock
+        else if (currentStep === 11 && selectedTool === 'scissors' && isPinch) {
+          const cutPos = getInarchingCutPos();
+          if (Math.hypot(handPos.x - cutPos.x, handPos.y - cutPos.y) < 90) {
+            simState.inarchHarvested = true;
+            simState.inarchRootstockPos = getInarchingUnionRestPos();
+            currentStep = 12; updateStepUI(); spawnLeafParticles(cutPos.x, cutPos.y);
+          }
+        }
+        // Step 12: carry the harvested plant over and plant it in a new pot
+        else if (currentStep === 12 && selectedTool === 'hand') {
+          if (isPinch && !simState.inarchPlantedInPot) {
+            if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - simState.inarchRootstockPos.y) < 100 || simState.inarchRootstockHeld) {
+              simState.inarchRootstockHeld = true;
+              simState.inarchRootstockPos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.inarchRootstockHeld) {
+            if (Math.hypot(handPos.x - potPos.x, handPos.y - potPos.y) < 130) {
+              simState.inarchRootstockHeld = false;
+              simState.inarchPlantedInPot = true;
+              currentStep = 13; updateStepUI();
+            } else { simState.inarchRootstockHeld = false; }
+          }
+        }
+        // Step 13: water the newly planted tree so it grows
+        else if (currentStep === 13 && selectedTool === 'water' && isPinch) {
+          if (Math.hypot(handPos.x - potPos.x, handPos.y - (potPos.y - 60)) < 110) {
+            spawnWaterParticles(handPos.x, handPos.y);
+            simState.inarchGrowWaterLevel = Math.min(100, simState.inarchGrowWaterLevel + 2.0);
+            if (simState.inarchGrowWaterLevel >= 100) { spawnSuccessSparkles(potPos.x, potPos.y - 60); currentStep = 14; updateStepUI(); }
+          }
+        }
+      }
+
+      else if (currentMode === 'grafting') {
+        const { x: topX, y: topY } = getGraftingRootstockTopPos();
+        const donorPos = getGraftingDonorPos();
+        const rBranch = getGraftingDonorRightBranchPos();
+        const lBranch = getGraftingDonorLeftBranchPos();
+        const basePos = getGraftingDonorBasePos();
+
+        if (currentStep === 1 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - topX, handPos.y - topY) < 70) { simState.rootstockTopCut = true; currentStep = 2; updateStepUI(); spawnLeafParticles(topX, topY); }
+        }
+        else if (currentStep === 2 && selectedTool === 'knife' && isPinch) {
+          if (Math.hypot(handPos.x - topX, handPos.y - topY) < 70 && simState.rootstockTopCut) { simState.stemSplit = true; currentStep = 3; updateStepUI(); }
+        }
+        // Step 3: prune off the donor tree's right branch
+        else if (currentStep === 3 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - rBranch.x, handPos.y - rBranch.y) < 70) {
+            simState.scionRightBranchCut = true; currentStep = 4; updateStepUI(); spawnLeafParticles(rBranch.x, rBranch.y);
+          }
+        }
+        // Step 4: prune off the donor tree's left branch
+        else if (currentStep === 4 && selectedTool === 'scissors' && isPinch) {
+          if (Math.hypot(handPos.x - lBranch.x, handPos.y - lBranch.y) < 70) {
+            simState.scionLeftBranchCut = true; currentStep = 5; updateStepUI(); spawnLeafParticles(lBranch.x, lBranch.y);
+          }
+        }
+        // Step 5: shape the trunk's base into a V wedge, ready for insertion
+        else if (currentStep === 5 && selectedTool === 'knife' && isPinch) {
+          if (Math.hypot(handPos.x - basePos.x, handPos.y - basePos.y) < 70) {
+            simState.scionWedged = true;
+            simState.scionPos = { x: donorPos.x, y: donorPos.y };
+            currentStep = 6; updateStepUI();
+          }
+        }
+        // Step 6: grab that SAME prepared tree (not a new small twig) and
+        // insert it into the rootstock's cleft, at its own full size
+        else if (currentStep === 6 && selectedTool === 'hand') {
+          if (isPinch && !simState.scionInserted) {
+            if (Math.hypot(handPos.x - simState.scionPos.x, handPos.y - simState.scionPos.y) < 90 || simState.scionHeld) {
+              simState.scionHeld = true; simState.scionPos = { x: handPos.x, y: handPos.y };
+            }
+          } else if (!isPinch && simState.scionHeld) {
+            if (Math.hypot(handPos.x - topX, handPos.y - topY) < 100) {
+              simState.scionHeld = false; simState.scionInserted = true;
+              simState.scionPos = { x: topX, y: topY + 45 }; // pushed down so the wedge covers the split crack
+              currentStep = 7; updateStepUI();
+            } else { simState.scionHeld = false; }
+          }
+        }
+        else if (currentStep === 7 && selectedTool === 'tape' && isPinch) {
+          if (Math.hypot(handPos.x - topX, handPos.y - topY) < 80 && simState.scionInserted) {
+            simState.graftTapeBound = true; spawnSuccessSparkles(topX, topY); currentStep = 8; updateStepUI();
+          }
+        }
+      }
+    }
+
+    // --- Visual Assets & Rendering Helpers ---
+
+    // Centralized coordinates for the air-layering branch & destination pot,
+    // so every place that needs them (interactions, rendering, the wait-panel
+    // callback) stays in sync automatically.
+    function getLayeringBranchPos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.5 + 75, y: groundY - 287.5 };
+    }
+    function getLayeringNewPotPos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.85, y: groundY - 20 };
+    }
+
+    // Centralized coordinates for the budding mode: the rootstock's T-cut
+    // union, the bud's source point on the donor tree's STEM (not a branch
+    // tip), and the topping-cut point above the union.
+    function getBuddingTrunkPos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.45, y: groundY - 200 };
+    }
+    function getBuddingBudSourcePos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.75, y: groundY - 150 };
+    }
+    function getBuddingTopCutPos() {
+      const trunk = getBuddingTrunkPos();
+      return { x: trunk.x, y: trunk.y - 50 };
+    }
+
+    // Centralized coordinates for inarching: the rootstock's starting pot, and
+    // the mother tree's branch - now a straight diagonal line (up and to the
+    // right) rather than a curve. The graft union sits partway along it,
+    // closer to the trunk than the leafy tip - see getInarchingUnionPos().
+    function getInarchingPotPos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.75, y: groundY };
+    }
+    function getInarchingBranchOrigin() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.35 + 85, y: groundY - 225 }; // at the right edge of the widened trunk
+    }
+    function getInarchingBranchTip() {
+      const origin = getInarchingBranchOrigin();
+      return { x: origin.x + 320, y: origin.y - 205 }; // further out sideways so its leaves clear the main canopy
+    }
+    const INARCH_UNION_T = 0.52;
+    function getInarchingUnionPos() {
+      const origin = getInarchingBranchOrigin();
+      const tip = getInarchingBranchTip();
+      return { x: origin.x + (tip.x - origin.x) * INARCH_UNION_T, y: origin.y + (tip.y - origin.y) * INARCH_UNION_T };
+    }
+    // Where the branch gets cut to harvest the graft: just a little below
+    // (trunk-side of) the tape/union - not all the way at the trunk - so a
+    // short stub is left behind on the mother tree.
+    const INARCH_CUT_T = 0.46;
+    function getInarchingCutPos() {
+      const origin = getInarchingBranchOrigin();
+      const tip = getInarchingBranchTip();
+      return { x: origin.x + (tip.x - origin.x) * INARCH_CUT_T, y: origin.y + (tip.y - origin.y) * INARCH_CUT_T };
+    }
+    // How much the rootstock tilts (to the right) once approached against
+    // the wound, so its diagonal cut face's angle better matches the
+    // diagonal branch it's pressed against. Used by both the position math
+    // below and the actual rotation in drawInarchingRootstockAt.
+    const INARCH_APPROACH_TILT_DEG = 30; // nearly parallel to the diagonal branch (~32.7°)
+
+    // Rotates a local offset (dx, dy) by tiltDeg and adds it to basePos - used
+    // to find where a point rigidly attached to the rootstock (like its cut
+    // face) currently sits in world space, whether resting or being dragged.
+    function getInarchRotatedPoint(basePos, tiltDeg, dx, dy) {
+      const rad = tiltDeg * Math.PI / 180;
+      return {
+        x: basePos.x + (dx * Math.cos(rad) - dy * Math.sin(rad)),
+        y: basePos.y + (dx * Math.sin(rad) + dy * Math.cos(rad))
+      };
+    }
+
+    function getInarchingUnionRestPos() {
+      // Positions the rootstock so its diagonally-cut TOP FACE (not its base)
+      // actually touches the union point, matching "ปลายยอดของต้นตอไปประสาน
+      // กับแผลพอดี" - accounting for the tilt, so the cut face stays exactly
+      // on the union point even after rotating around the base.
+      const union = getInarchingUnionPos();
+      const cutFaceDist = 150 * 0.9; // distance from the base pivot to the cut face, at the default 0.9 scale
+      const tiltRad = INARCH_APPROACH_TILT_DEG * Math.PI / 180;
+      return {
+        x: union.x - cutFaceDist * Math.sin(tiltRad),
+        y: union.y + cutFaceDist * Math.cos(tiltRad)
+      };
+    }
+
+    function spawnWaterParticles(x, y) {
+      for (let i = 0; i < 3; i++) particles.push({ x: x + (Math.random()-0.5)*20, y: y + 20, vx: (Math.random()-0.5)*2, vy: Math.random()*5+3, size: Math.random()*3+2, life: 30, color: '#38bdf8' });
+    }
+    function spawnLeafParticles(x, y) {
+      for (let i = 0; i < 8; i++) leafParticles.push({ x: x, y: y, vx: (Math.random()-0.5)*6, vy: (Math.random()-0.5)*6-2, size: Math.random()*6+3, life: 40, color: '#22c55e' });
+    }
+    function spawnSuccessSparkles(x, y) {
+      for (let i = 0; i < 20; i++) particles.push({ x: x, y: y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, size: Math.random()*5+3, life: 50, color: '#facc15' });
+    }
+
+    // Student points (session-based for now - per-student persistence is a
+    // planned future addition, not implemented yet).
+    let studentPoints = 0;
+    function updatePointsDisplay() {
+      const el = document.getElementById('pointsValue');
+      if (el) el.innerText = studentPoints;
+    }
+    function awardPoints(amount) {
+      studentPoints += amount;
+      updatePointsDisplay();
+      if (currentPlayerName) syncPointsToSheet(currentPlayerName, currentMode, amount);
+    }
+    function showGiftBoxReward(amount) {
+      const el = document.getElementById('giftBoxPopup');
+      const amountEl = document.getElementById('giftBoxAmount');
+      if (!el || !amountEl) return;
+      amountEl.innerText = '+' + amount + ' Point';
+      el.classList.remove('hidden');
+      const box = el.querySelector('.gift-pop-animate') || el.firstElementChild;
+      // Restart the CSS animation each time it's triggered
+      box.classList.remove('gift-pop-animate');
+      void box.offsetWidth; // force reflow so the animation restarts
+      box.classList.add('gift-pop-animate');
+      setTimeout(() => { el.classList.add('hidden'); }, 1800);
+    }
+
+    // ============================================================
+    // APP SHELL: Google Sheet integration (login / points / leaderboard)
+    // ============================================================
+    // Paste your deployed Apps Script Web App URL here (ends in /exec).
+    // See code.gs for the backend script and setup steps.
+    const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxnY9Wrus98juMgGni089gEe_sGbuX7wPZYSjkyg518cUog7NcFE00ZgDrjS1IkO8DN/exec";
+
+    let currentPlayerName = null;
+
+    function sheetApiReady() {
+      return SHEET_API_URL && SHEET_API_URL.indexOf('PASTE_YOUR') === -1;
+    }
+
+    // Cached copy of the sheet data, fetched once at startup so that
+    // logging in and opening the leaderboard are instant rather than
+    // waiting on a fresh (often slow, cold-start) Apps Script round trip.
+    let cachedStudents = [];
+    let cachedLeaderboard = [];
+    let initDataLoaded = false;
+
+    async function fetchInitData() {
+      if (!sheetApiReady()) return;
+      try {
+        const res = await fetch(`${SHEET_API_URL}?action=getInitData`);
+        const data = await res.json();
+        cachedStudents = data.students || [];
+        cachedLeaderboard = data.leaderboard || [];
+        initDataLoaded = true;
+        populateStudentDropdown();
+        applyModePictures(data.pictures);
+        // If the player already logged in before this landed, fill in their points now
+        if (currentPlayerName) {
+          studentPoints = lookupPointsFor(currentPlayerName);
+          updatePointsDisplay();
+          const menuEl = document.getElementById('menuPointsValue');
+          if (menuEl) menuEl.innerText = studentPoints;
+        }
+      } catch (err) {
+        console.warn('Could not load init data:', err);
+      }
+    }
+
+    function populateStudentDropdown() {
+      const dropdown = document.getElementById('studentDropdown');
+      if (!dropdown) return;
+      dropdown.innerHTML = '<option value="">เลือกชื่อของคุณ</option>';
+      cachedStudents.forEach((name) => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        dropdown.appendChild(opt);
+      });
+    }
+
+    // Mode artwork supplied from the "Pic" sheet tab (A2-A6), in this order.
+    // Any row left blank keeps that mode's built-in SVG illustration.
+    const PICTURE_MODE_ORDER = ['cutting', 'layering', 'budding', 'inarching', 'grafting'];
+
+    function applyModePictures(urls) {
+      if (!Array.isArray(urls)) return;
+      PICTURE_MODE_ORDER.forEach((mode, i) => {
+        const url = (urls[i] || '').trim();
+        if (!url) return;
+        const img = document.getElementById(`modePic-${mode}`);
+        if (!img) return;
+        const svg = img.parentElement.querySelector('.mode-art');
+        img.onload = () => {
+          img.hidden = false;
+          if (svg) svg.style.display = 'none'; // photo replaces the fallback art
+        };
+        img.onerror = () => {
+          // Bad or unreachable link - quietly keep the built-in illustration
+          img.hidden = true;
+          console.warn(`Mode picture failed to load for "${mode}":`, url);
+        };
+        img.src = url;
+      });
+    }
+
+    function lookupPointsFor(name) {
+      const found = cachedLeaderboard.find((e) => e.name === name);
+      return found ? found.points : 0;
+    }
+
+    function syncPointsToSheet(name, mode, points) {
+      if (!sheetApiReady()) return;
+      // Fire-and-forget: never block gameplay waiting on the sheet.
+      // Sent without a custom Content-Type header on purpose - this keeps
+      // it a CORS "simple request" so Apps Script Web Apps (which don't
+      // handle OPTIONS preflight) can receive it directly.
+      fetch(SHEET_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'addPoints', name, mode, points }),
+        keepalive: true
+      }).catch((err) => console.warn('Could not sync points to sheet:', err));
+
+      // Keep the local cache in step so the leaderboard reflects it immediately
+      const found = cachedLeaderboard.find((e) => e.name === name);
+      if (found) found.points += points;
+      else cachedLeaderboard.push({ name: name, points: points });
+      cachedLeaderboard.sort((a, b) => b.points - a.points);
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
+    function renderLeaderboardList() {
+      const listEl = document.getElementById('leaderboardList');
+      const podiumEl = document.getElementById('leaderboardPodium');
+      if (!listEl || !podiumEl) return;
+      podiumEl.innerHTML = '';
+
+      if (!sheetApiReady()) {
+        listEl.innerHTML = '<p class="empty-note">ยังไม่ได้เชื่อมต่อฐานข้อมูล</p>';
+        return;
+      }
+      if (!initDataLoaded) {
+        listEl.innerHTML = '<p class="empty-note">กำลังโหลด…</p>';
+        return;
+      }
+      if (cachedLeaderboard.length === 0) {
+        listEl.innerHTML = '<p class="empty-note">ยังไม่มีใครทำคะแนน เริ่มเป็นคนแรกเลย</p>';
+        return;
+      }
+
+      // Top three go on the podium, ordered 2nd - 1st - 3rd so the winner
+      // stands in the middle and tallest
+      const top = cachedLeaderboard.slice(0, 3);
+      const order = [1, 0, 2]; // display positions
+      const medals = ['🥇', '🥈', '🥉'];
+      podiumEl.innerHTML = order
+        .filter((idx) => top[idx])
+        .map((idx) => `
+          <div class="pod pod-${idx + 1}">
+            <span class="pod-medal">${medals[idx]}</span>
+            <span class="pod-name">${escapeHtml(top[idx].name)}</span>
+            <span class="pod-score">${top[idx].points}</span>
+          </div>
+        `).join('');
+
+      const rest = cachedLeaderboard.slice(3);
+      listEl.innerHTML = rest.length === 0
+        ? ''
+        : rest.map((entry, i) => `
+            <div class="rank-row${entry.name === currentPlayerName ? ' rank-row-me' : ''}">
+              <span class="rank-no">${i + 4}</span>
+              <span class="rank-name">${escapeHtml(entry.name)}</span>
+              <span class="rank-score">${entry.points}</span>
+            </div>
+          `).join('');
+    }
+
+    // Refreshes from the sheet in the background, then re-renders
+    async function refreshLeaderboard() {
+      if (!sheetApiReady()) return;
+      try {
+        const res = await fetch(`${SHEET_API_URL}?action=getLeaderboard`);
+        const data = await res.json();
+        cachedLeaderboard = data.leaderboard || [];
+        initDataLoaded = true;
+        renderLeaderboardList();
+      } catch (err) {
+        console.warn('Could not refresh leaderboard:', err);
+      }
+    }
+
+    // ---- Screen navigation ----
+    function showAppScreen(id) {
+      ['screenLoading', 'screenLogin', 'screenLeaderboard', 'screenModeSelect'].forEach((s) => {
+        document.getElementById(s).classList.toggle('hidden', s !== id);
+      });
+    }
+    function loginAsStudent() {
+      const name = document.getElementById('studentDropdown').value;
+      if (!name) return;
+      completeLogin(name);
+    }
+    function loginAsGuest() {
+      const name = document.getElementById('guestNameInput').value.trim();
+      const statusEl = document.getElementById('loginStatusMsg');
+      if (!name) { statusEl.innerText = 'กรุณาพิมพ์ชื่อก่อนเริ่มเล่น'; return; }
+      statusEl.innerText = '';
+      completeLogin(name);
+    }
+    function completeLogin(name) {
+      currentPlayerName = name;
+      // Read from the cache so login is instant - if the data hasn't landed
+      // yet, fetchInitData() fills the points in as soon as it arrives.
+      studentPoints = lookupPointsFor(name);
+      updatePointsDisplay();
+      document.getElementById('playerNameDisplay').innerText = name;
+      document.getElementById('menuPointsValue').innerText = studentPoints;
+      showAppScreen('screenModeSelect');
+    }
+    function logoutPlayer() {
+      currentPlayerName = null;
+      studentPoints = 0;
+      updatePointsDisplay();
+      document.getElementById('guestNameInput').value = '';
+      document.getElementById('studentDropdown').value = '';
+      document.getElementById('loginStatusMsg').innerText = '';
+      showAppScreen('screenLogin');
+    }
+    function showLeaderboardScreen() {
+      showAppScreen('screenLeaderboard');
+      renderLeaderboardList(); // instant, from cache
+      refreshLeaderboard();    // then quietly update in the background
+    }
+    function backFromLeaderboard() {
+      showAppScreen(currentPlayerName ? 'screenModeSelect' : 'screenLogin');
+    }
+    function enterMode(mode) {
+      document.getElementById('appShell').classList.add('hidden');
+      switchMode(mode);
+    }
+    function backToModeSelect() {
+      document.getElementById('appShell').classList.remove('hidden');
+      document.getElementById('menuPointsValue').innerText = studentPoints;
+      showAppScreen('screenModeSelect');
+    }
+
+    function drawLeafCloud(x, y, r) {
+      ctx.fillStyle = "#16a34a"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#15803d"; ctx.beginPath(); ctx.arc(x-r*0.3, y+r*0.3, r*0.7, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#22c55e"; ctx.beginPath(); ctx.arc(x+r*0.3, y-r*0.3, r*0.6, 0, Math.PI*2); ctx.fill();
+    }
+
+    // A fluffy background cloud, made of overlapping circles - drawn in the
+    // sky area instead of a flat blue fill.
+    function drawCloud(x, y, scale = 1, alpha = 0.85) {
+      ctx.save();
+      ctx.fillStyle = `rgba(56, 189, 248, ${alpha})`;
+      ctx.beginPath(); ctx.arc(x, y, 30 * scale, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x - 35 * scale, y + 8 * scale, 24 * scale, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 35 * scale, y + 8 * scale, 24 * scale, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x - 15 * scale, y - 12 * scale, 22 * scale, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 18 * scale, y - 10 * scale, 20 * scale, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // Small floating progress bar, e.g. for the "scrape up and down" gauge.
+    function drawGaugeBar(x, y, pct, label) {
+      const w = 110, h = 14;
+      const clampedPct = Math.max(0, Math.min(100, pct));
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+      ctx.fillRect(x - w / 2, y - h / 2, w, h);
+      ctx.fillStyle = '#22c55e';
+      ctx.fillRect(x - w / 2, y - h / 2, w * (clampedPct / 100), h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px Kanit'; ctx.textAlign = 'center';
+      ctx.fillText(label, x, y - h / 2 - 8);
+    }
+
+    // Coconut-husk ball with roots visible inside/through it, and just two
+    // "tie" bands (top & bottom) cinching the husk against the wound - not a
+    // full wrap - drawn both on the mother-tree branch and, once harvested,
+    // still attached to the base of the carried/replanted cutting.
+    function drawWrapBallAt(x, y, opts = {}) {
+      const { showCoconut = true, showTape = true, showWaterDots = false, showRoots = false, rootLen = 36, sizeMultiplier = 1, tieStyle = 'sides' } = opts;
+      const s = sizeMultiplier;
+      const ballRadius = 27 * s;
+      ctx.save(); ctx.translate(x, y);
+      if (showCoconut) {
+        ctx.fillStyle = "#854d0e";
+        ctx.beginPath(); ctx.arc(0, 0, ballRadius, 0, Math.PI * 2); ctx.fill();
+      }
+      if (showRoots) {
+        // Roots fan out from inside the husk, reaching a little past its edge
+        drawRoots(0, 0, 6, rootLen);
+      }
+      if (showWaterDots) {
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath(); ctx.arc(-9 * s, -8 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(8 * s, 6 * s, 3 * s, 0, Math.PI * 2); ctx.fill();
+      }
+      if (showTape) {
+        ctx.fillStyle = "rgba(96, 165, 250, 0.55)";
+        ctx.strokeStyle = "rgba(191, 219, 254, 0.9)"; ctx.lineWidth = 1.5;
+        if (tieStyle === 'top') {
+          // A single tie right at the neck where the ball meets the stem
+          // above it - cinching the opening shut, like tying a pouch closed
+          const tieY = -ballRadius * 0.75;
+          ctx.beginPath(); ctx.ellipse(0, tieY, ballRadius * 0.62, 8 * s, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(0, tieY, ballRadius * 0.62, 8 * s, 0, 0, Math.PI * 2); ctx.stroke();
+        } else {
+          // Two tie-bands at the LEFT and RIGHT of the husk - that's where
+          // the branch itself passes through the wrapped bag, so that's
+          // where it gets cinched shut (not top/bottom) - the husk stays
+          // visible in between
+          [-21 * s, 21 * s].forEach((tieX) => {
+            ctx.beginPath(); ctx.ellipse(tieX, 0, 6 * s, 26 * s, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(tieX, 0, 6 * s, 26 * s, 0, 0, Math.PI * 2); ctx.stroke();
+          });
+        }
+      }
+      ctx.restore();
+    }
+
+    // A small dormant bud node visible on the donor tree's bark, before it's harvested
+    function drawBudMark(x, y) {
+      ctx.save(); ctx.translate(x, y);
+      ctx.fillStyle = "#a3e635";
+      ctx.beginPath(); ctx.ellipse(0, 0, 6, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#4d7c0f"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, 6, 10, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    // The harvested bud shield (bark backing + bud) - a real draggable object,
+    // drawn wherever it currently sits: still on the donor tree, mid-carry, or
+    // seated in the T-cut on the rootstock.
+    function drawBudChip(x, y) {
+      ctx.save(); ctx.translate(x, y);
+      ctx.fillStyle = "#854d0e";
+      ctx.beginPath(); ctx.ellipse(0, 0, 10, 17, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#a3e635";
+      ctx.beginPath(); ctx.ellipse(0, 0, 7, 13, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // The scion twig, cut from the donor tree - a real object that visibly
+    // changes as it's prepared: full length + leaves when just harvested,
+    // shorter once trimmed, and with a wedge-shaped cut once shaped for
+    // insertion into the rootstock's cleft.
+    // The grafting donor tree, prepared into the scion IN PLACE: loses its
+    // right branch, then its left branch, then its trunk base is shaped into
+    // a V wedge - the same tree object is later carried and inserted, at the
+    // same scale, rather than spawning a separate small twig.
+    function drawGraftingDonorTree(pos, opts = {}) {
+      const {
+        scale = 1.0, showLeaves = true,
+        hideRightBranch = false, hideLeftBranch = false, baseWedge = false
+      } = opts;
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.scale(scale, scale);
+
+      const trunkGrad = ctx.createLinearGradient(-25, 0, 25, 0);
+      trunkGrad.addColorStop(0, "#78350f"); trunkGrad.addColorStop(0.5, "#92400e"); trunkGrad.addColorStop(1, "#451a03");
+      ctx.fillStyle = trunkGrad;
+
+      if (baseWedge) {
+        // Trunk tapers to a V-wedge point at its base, ready for insertion
+        ctx.beginPath();
+        ctx.moveTo(-22, -320); ctx.lineTo(22, -320);
+        ctx.lineTo(22, -40); ctx.lineTo(0, 0); ctx.lineTo(-22, -40);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#fef3c7";
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(22, -40); ctx.lineTo(9, -40); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-22, -40); ctx.lineTo(-9, -40); ctx.closePath(); ctx.fill();
+      } else {
+        ctx.fillRect(-22, -320, 44, 320);
+      }
+
+      ctx.fillStyle = trunkGrad;
+      if (!hideRightBranch) ctx.fillRect(10, -240, 150, 20);
+      if (!hideLeftBranch) ctx.fillRect(-110, -210, 100, 22);
+
+      if (showLeaves) {
+        if (!hideLeftBranch) drawLeafCloud(-110, -210, 55);
+        if (!hideRightBranch) drawLeafCloud(150, -240, 45);
+        drawLeafCloud(0, -340, 95); drawLeafCloud(-50, -320, 70); drawLeafCloud(50, -320, 70);
+      }
+      ctx.restore();
+    }
+
+    // The mother tree's branch for inarching - drawn as its own straight
+    // diagonal stroke (instead of the shared drawStylizedTree's horizontal
+    // branch), angled up and to the right.
+    function drawDiagonalBranch(origin, tip, showLeaves = true) {
+      ctx.save();
+      ctx.strokeStyle = "#92400e";
+      ctx.lineWidth = 43;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.stroke();
+      ctx.restore();
+      if (showLeaves) {
+        drawLeafCloud(tip.x, tip.y - 29, 77);
+        drawLeafCloud(tip.x - 45, tip.y + 10, 58);
+        drawLeafCloud(tip.x + 38, tip.y - 6, 51);
+      }
+    }
+
+    // A flat cross-section cap overlaid right at a cut point, perpendicular
+    // to the branch's direction - so that specific end reads as a clean
+    // straight cut, while the branch's other end (e.g. where it meets the
+    // trunk) keeps its natural rounded look.
+    function drawFlatCutCap(pos, branchAngle, branchWidth) {
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(branchAngle + Math.PI / 2);
+      ctx.fillStyle = "#fef3c7";
+      ctx.fillRect(-branchWidth / 2, -3, branchWidth, 6);
+      ctx.restore();
+    }
+
+    // A taproot that tapers to a sharpened point at the tip, per the
+    // reference sketch. baseHalfWidth should match the trunk's own width at
+    // the point it's attached, so the root doesn't look mismatched in size.
+    function drawTaproot(x, y, length, baseHalfWidth = 6) {
+      ctx.save();
+      ctx.fillStyle = "#fef3c7";
+      ctx.beginPath();
+      ctx.moveTo(x - baseHalfWidth, y);
+      ctx.lineTo(x + baseHalfWidth, y);
+      ctx.lineTo(x, y + length);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Lateral roots as straight lines branching directly off the taproot's
+    // body (2 per side, at two heights down its length) - distinct from the
+    // fan-from-a-single-point look of drawRoots() used elsewhere.
+    function drawLateralRootsFromTaproot(x, y, taprootLength) {
+      ctx.save();
+      ctx.strokeStyle = "#fef3c7"; ctx.lineWidth = 3; ctx.lineCap = "round";
+      const stops = [0.4, 0.75];
+      const lens = [44, 32];
+      stops.forEach((frac, i) => {
+        const ly = y + taprootLength * frac;
+        const len = lens[i];
+        ctx.beginPath(); ctx.moveTo(x, ly); ctx.lineTo(x - len, ly + len * 0.25); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, ly); ctx.lineTo(x + len, ly + len * 0.25); ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    // The rootstock plant through its inarching lifecycle: still potted, bare-
+    // rooted after being pulled out, topped, trimmed to a taproot, wrapped at
+    // the taproot, or finally replanted and growing. One function handles all
+    // of these states via opts so the many call sites stay consistent.
+    // The segment of the mother tree's branch (with leaves) that comes away
+    // attached to the harvested rootstock, once cut at the branch's base.
+    // Drawn at the same angle/length as the original branch, starting from
+    // the rootstock's diagonal cut face.
+    function drawHarvestedBranchSegment(startPos, angle, length, tapeFrac = null, sizeMultiplier = 1, leafTier = 1, widthMultiplier = null) {
+      const w = widthMultiplier !== null ? widthMultiplier : sizeMultiplier;
+      const startX = startPos.x;
+      const startY = startPos.y;
+      const endX = startX + Math.cos(angle) * length;
+      const endY = startY + Math.sin(angle) * length;
+      ctx.save();
+      ctx.strokeStyle = "#92400e";
+      ctx.lineWidth = 43 * w;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.restore();
+
+      if (tapeFrac !== null) {
+        // The graft union & its tape travel with the harvested piece - sits
+        // near the base of this segment (close to where it was cut)
+        const tapeX = startX + (endX - startX) * tapeFrac;
+        const tapeY = startY + (endY - startY) * tapeFrac;
+        ctx.save();
+        ctx.translate(tapeX, tapeY);
+        ctx.rotate(angle);
+        ctx.fillStyle = "rgba(59, 130, 246, 0.85)";
+        ctx.fillRect(-40, -24, 80, 48);
+        ctx.restore();
+      }
+
+      // Same leaf-cluster sizes as the original branch (drawDiagonalBranch),
+      // so the harvested piece looks identical, not thinned-down. Higher
+      // leafTier adds MORE clusters (denser canopy) rather than scaling
+      // individual leaves bigger, so growth reads as fuller, not wider.
+      drawLeafCloud(endX, endY - 29 * sizeMultiplier, 77 * sizeMultiplier);
+      drawLeafCloud(endX - 45 * sizeMultiplier, endY + 10 * sizeMultiplier, 58 * sizeMultiplier);
+      drawLeafCloud(endX + 38 * sizeMultiplier, endY - 6 * sizeMultiplier, 51 * sizeMultiplier);
+      if (leafTier >= 2) {
+        drawLeafCloud(endX - 22, endY - 48, 45);
+        drawLeafCloud(endX + 58, endY + 14, 40);
+      }
+      if (leafTier >= 3) {
+        drawLeafCloud(endX + 12, endY - 58, 42);
+        drawLeafCloud(endX - 62, endY - 8, 38);
+      }
+    }
+
+    function drawInarchingRootstockAt(pos, opts = {}) {
+      const {
+        scale = 0.9, showPot = false, cutTop = false,
+        rootStyle = 'none', // 'none' | 'full' (taproot + laterals) | 'taproot' (taproot only, after trimming)
+        showWrap = false, wrapTaped = false, wrapWatered = false, wrapRootsGrown = false,
+        tiltDeg = 0, // rotates the whole plant around its base point, e.g. while pressed against an angled wound
+        stumpWidthScale = null // independent X-scale for the cutTop stump, so its width can match another element (e.g. the branch above the tape) without changing its height
+      } = opts;
+
+      const tiltRad = tiltDeg * Math.PI / 180;
+      if (tiltRad !== 0) { ctx.save(); ctx.translate(pos.x, pos.y); ctx.rotate(tiltRad); ctx.translate(-pos.x, -pos.y); }
+
+      const stumpW = stumpWidthScale !== null ? stumpWidthScale : scale;
+      if (cutTop) {
+        // A short stem with a DIAGONAL top cut (per the reference sketch) so
+        // it can be pressed flush against the mother branch's wound - not
+        // the shared drawStylizedTree's flat straight-across stump
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.scale(stumpW, scale);
+        const trunkGrad = ctx.createLinearGradient(-16, 0, 16, 0);
+        trunkGrad.addColorStop(0, "#78350f"); trunkGrad.addColorStop(0.5, "#92400e"); trunkGrad.addColorStop(1, "#451a03");
+        ctx.fillStyle = trunkGrad;
+        ctx.beginPath();
+        ctx.moveTo(-16, 0); ctx.lineTo(-16, -130); ctx.lineTo(16, -170); ctx.lineTo(16, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = "#fef3c7"; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.moveTo(-16, -130); ctx.lineTo(16, -170); ctx.stroke();
+        ctx.restore();
+      } else {
+        drawStylizedTree(pos.x, pos.y, scale, { showLeaves: true, showPot });
+      }
+
+      // The taproot's base matches whichever trunk width is currently
+      // showing (wider un-topped trunk vs. the narrower topped stem)
+      const taprootBaseHalfWidth = (cutTop ? 16 * stumpW : 22 * scale);
+      const taprootLength = 85 * scale;
+
+      // The taproot is always the main root shown; lateral roots branch off
+      // it too until they're trimmed away in their own separate step
+      if (rootStyle === 'full') {
+        drawTaproot(pos.x, pos.y, taprootLength, taprootBaseHalfWidth);
+        drawLateralRootsFromTaproot(pos.x, pos.y, taprootLength);
+      } else if (rootStyle === 'taproot') {
+        drawTaproot(pos.x, pos.y, taprootLength, taprootBaseHalfWidth);
+      }
+      if (showWrap) {
+        // Positioned so the ball's top edge sits right at the root junction
+        // (ballRadius = 27 * sizeMultiplier = 45.9, so the center needs to
+        // sit about that far below pos.y for a snug fit)
+        const wrapOffset = 44;
+        drawWrapBallAt(pos.x, pos.y + wrapOffset, { showCoconut: true, showTape: wrapTaped, showWaterDots: wrapWatered, showRoots: wrapRootsGrown, sizeMultiplier: 1.7, tieStyle: 'top' });
+      }
+
+      if (tiltRad !== 0) ctx.restore();
+    }
+
+
+    // across a fixed angle range. Used so students can visibly see root count
+    // step up (2 -> 4 -> 6) as a cutting is watered more. `baseLen` controls
+    // how far the roots reach - use a small value to keep them contained
+    // inside a wrap ball rather than poking out past its edge.
+    function drawRoots(x, y, count, baseLen = 38) {
+      if (count <= 0) return;
+      const maxSpreadDeg = 55;
+      const angleStep = count > 1 ? (2 * maxSpreadDeg) / (count - 1) : 0;
+      ctx.strokeStyle = '#fef3c7'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i = 0; i < count; i++) {
+        const angleDeg = count > 1 ? (-maxSpreadDeg + i * angleStep) : 0;
+        const rad = (angleDeg * Math.PI) / 180;
+        const len = baseLen + Math.abs(angleDeg) * (baseLen / 250);
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.sin(rad) * len, y + Math.cos(rad) * len);
+      }
+      ctx.stroke();
+    }
+
+    function drawPulseTarget(x, y, text) {
+      const t = performance.now() / 300;
+      const pulse = Math.sin(t) * 8 + 16;
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.9)"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, pulse, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = "#4ade80"; ctx.font = "bold 14px Kanit"; ctx.textAlign = "center";
+      ctx.fillText(text, x, y - pulse - 12);
+    }
+
+    // Centralized coordinates for the grafting mode: the rootstock's cleft
+    // point, the donor tree (no pot - already prepared, standing free), and
+    // the point on its branch where the scion twig gets harvested from.
+    function getGraftingRootstockTopPos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.45, y: groundY - 275 };
+    }
+    function getGraftingDonorPos() {
+      const groundY = canvas.height * 0.85;
+      return { x: canvas.width * 0.75, y: groundY };
+    }
+    function getGraftingDonorRightBranchPos() {
+      const donor = getGraftingDonorPos();
+      return { x: donor.x + 150, y: donor.y - 240 };
+    }
+    function getGraftingDonorLeftBranchPos() {
+      const donor = getGraftingDonorPos();
+      return { x: donor.x - 110, y: donor.y - 210 };
+    }
+    function getGraftingDonorBasePos() {
+      const donor = getGraftingDonorPos();
+      return { x: donor.x, y: donor.y - 30 };
+    }
+
+    function drawStylizedTree(x, y, scale = 1, config = {}) {
+      ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+
+      // Draw Pot
+      if (config.showPot !== false) {
+        ctx.fillStyle = "#b45309"; ctx.beginPath(); ctx.moveTo(-70, 0); ctx.lineTo(70, 0); ctx.lineTo(55, 110); ctx.lineTo(-55, 110); ctx.fill();
+        ctx.fillStyle = "#d97706"; ctx.fillRect(-75, -12, 150, 15);
+        ctx.fillStyle = "#451a03"; ctx.beginPath(); ctx.ellipse(0, -10, 68, 12, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      if (config.showTree === false) { ctx.restore(); return; }
+
+      // Draw Trunk
+      const trunkWidthScale = config.trunkWidthScale || 1;
+      const trunkGrad = ctx.createLinearGradient(-25 * trunkWidthScale, 0, 25 * trunkWidthScale, 0);
+      trunkGrad.addColorStop(0, "#78350f"); trunkGrad.addColorStop(0.5, "#92400e"); trunkGrad.addColorStop(1, "#451a03");
+      ctx.fillStyle = trunkGrad;
+
+      if (config.cutTop) {
+        ctx.fillRect(-22 * trunkWidthScale, -220, 44 * trunkWidthScale, 220);
+        ctx.fillStyle = "#fef3c7"; ctx.beginPath(); ctx.ellipse(0, -220, 22 * trunkWidthScale, 7, 0, 0, Math.PI * 2); ctx.fill();
+        if (config.stemSplit) { ctx.strokeStyle = "#451a03"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -220); ctx.lineTo(0, -180); ctx.stroke(); }
+      } else {
+        // plantedInGround: reach all the way down to the actual bottom edge
+        // of the canvas (dynamic, so it works at any screen size) instead of
+        // a fixed offset
+        const groundExtra = config.plantedInGround ? Math.max(0, (canvas.height - y) / scale) : 0;
+        ctx.fillRect(-22 * trunkWidthScale, -320, 44 * trunkWidthScale, 320 + groundExtra);
+        if (!config.hideBranch) {
+          if (config.branchCut) ctx.fillRect(10, -240, 45, 20); else ctx.fillRect(10, -240, 150, 20);
+        }
+        const leftBranchLen = config.leftBranchLength || 100;
+        ctx.fillRect(-(leftBranchLen + 10), -210, leftBranchLen, 22);
+        
+        // Draw Leaves
+        if (config.showLeaves !== false) {
+          drawLeafCloud(-(leftBranchLen + 10), -210, 55);
+          if (!config.branchCut) drawLeafCloud(150, -240, 45);
+          drawLeafCloud(0, -340, 95); drawLeafCloud(-50, -320, 70); drawLeafCloud(50, -320, 70);
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawCutBranchItem(x, y, scale = 1, leavesTrimmed = false) {
+      ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+      ctx.fillStyle = "#78350f"; ctx.fillRect(-8, -50, 16, 90);
+      if (!leavesTrimmed) { drawLeafCloud(0, -50, 25); drawLeafCloud(-15, -20, 18); drawLeafCloud(15, -20, 18); } 
+      else { drawLeafCloud(0, -50, 15); }
+      ctx.restore();
+    }
+
+    // --- Main Scene Rendering ---
+
+    function renderModeScene(groundY) {
+      if (currentMode === 'cutting') {
+        drawStylizedTree(canvas.width * 0.3, groundY, 1.25, { showLeaves: true, branchCut: simState.branchCut });
+        // The destination pot should never show a full tree shape - only ever
+        // an empty pot, with the planted cutting itself drawn separately below.
+        drawStylizedTree(canvas.width * 0.7, groundY, 1.25, { showTree: false });
+        
+        if (simState.branchCut && !simState.plantedBranchInPot) {
+          drawCutBranchItem(simState.cutBranchPos.x, simState.cutBranchPos.y, 1.2, simState.leavesTrimmed);
+        }
+        
+        if (simState.plantedBranchInPot) {
+          const potX = canvas.width * 0.7; const potY = groundY - 15;
+          drawCutBranchItem(potX, potY, 1.2, simState.leavesTrimmed);
+          if (simState.wateredLevel > 0) {
+            let rootCount = 2;
+            if (simState.wateredLevel >= 40) rootCount = 4;
+            if (simState.wateredLevel >= 75) rootCount = 6;
+            drawRoots(potX, potY, rootCount);
+
+            const scale = 0.3 + (simState.wateredLevel / 100) * 0.8;
+            drawLeafCloud(potX, potY - 90, 28 * scale); drawLeafCloud(potX - 20, potY - 70, 22 * scale);
+          }
+        }
+
+        if (currentStep === 1) drawPulseTarget(canvas.width * 0.3 + 125, groundY - 300, "ตัดกิ่ง");
+        else if (currentStep === 2) !simState.cutBranchHeld ? drawPulseTarget(simState.cutBranchPos.x, simState.cutBranchPos.y, "จับกิ่ง") : drawPulseTarget(canvas.width * 0.7, groundY - 20, "ปักลงกระถาง");
+        else if (currentStep === 3) drawPulseTarget(canvas.width * 0.7, groundY - 15, "เล็มใบ");
+        else if (currentStep === 4) drawPulseTarget(canvas.width * 0.7, groundY - 50, "รดน้ำ");
+
+      } else if (currentMode === 'layering') {
+        // branchCut here reuses the tree's existing "shorten the right branch" visual
+        // once the layered piece has actually been cut away from the mother tree
+        drawStylizedTree(canvas.width * 0.5, groundY, 1.25, { showLeaves: true, branchCut: simState.layerHarvested });
+        // Empty pot waiting for the harvested, already-rooted cutting
+        drawStylizedTree(canvas.width * 0.85, groundY, 1.0, { showTree: false });
+
+        const { x: branchX, y: branchY } = getLayeringBranchPos();
+        const { x: newPotX, y: newPotY } = getLayeringNewPotPos();
+
+        if (!simState.layerHarvested) {
+          // Bark/cambium exposure drawn as a simple rectangle on the branch
+          if (simState.barkStripped && !simState.coconutWrapped) {
+            ctx.save(); ctx.translate(branchX, branchY);
+            ctx.fillStyle = simState.cambiumScraped ? "#fffbeb" : "#fef3c7";
+            ctx.fillRect(-10, -20, 20, 40);
+            ctx.restore();
+          }
+          // Coconut husk / water dots / roots / translucent tape stack
+          // cumulatively so taping doesn't hide what's underneath it - the
+          // roots (once grown) are drawn contained inside the husk itself,
+          // visible faintly through the translucent tape
+          if (simState.coconutWrapped) {
+            drawWrapBallAt(branchX, branchY, {
+              showCoconut: true,
+              showWaterDots: simState.ballWatered,
+              showTape: simState.tapeTied,
+              showRoots: simState.rootsGrown
+            });
+          }
+        }
+
+        // Once harvested, the rooted cutting is drawn with its husk ball still
+        // attached (for planting whole) - but the plastic tape is peeled off
+        // automatically right at cut time, exposing the husk and roots
+        if (simState.layerHarvested && !simState.layerPlantedInPot) {
+          drawCutBranchItem(simState.layerBranchPos.x, simState.layerBranchPos.y, 1.1, false);
+          drawWrapBallAt(simState.layerBranchPos.x, simState.layerBranchPos.y + 35, { showTape: false, showRoots: true });
+        }
+        if (simState.layerPlantedInPot) {
+          // Starts at the SAME size it was when just harvested (1.1) - no
+          // shrink-on-planting - then grows in a few clear staged rounds as
+          // it's watered, with roots getting a little longer each round too
+          let potScale = 1.1; let potRootLen = 36;
+          if (simState.layerGrowWaterLevel >= 40) { potScale = 1.35; potRootLen = 42; }
+          if (simState.layerGrowWaterLevel >= 75) { potScale = 1.6; potRootLen = 48; }
+          drawCutBranchItem(newPotX, newPotY, potScale, false);
+          drawWrapBallAt(newPotX, newPotY + 35 * (potScale / 1.1), { showTape: false, showRoots: true, rootLen: potRootLen });
+        }
+
+        if (currentStep === 1) drawPulseTarget(branchX, branchY, "ควั่นเปลือก");
+        else if (currentStep === 2) { drawPulseTarget(branchX, branchY, "ขูดขึ้น-ลง"); drawGaugeBar(branchX, branchY - 70, simState.scrapeProgress, "ขูดเยื่อเจริญ " + Math.floor(simState.scrapeProgress) + "%"); }
+        else if (currentStep === 3) drawPulseTarget(branchX, branchY, "หุ้มตุ้มตอน");
+        else if (currentStep === 4) drawPulseTarget(branchX, branchY, "รดน้ำ");
+        else if (currentStep === 5) drawPulseTarget(branchX, branchY, "พันเทป");
+        else if (currentStep === 7) drawPulseTarget(branchX, branchY, "ตัดกิ่งตอน");
+        else if (currentStep === 8) !simState.layerBranchHeld ? drawPulseTarget(simState.layerBranchPos.x, simState.layerBranchPos.y, "จับกิ่ง") : drawPulseTarget(newPotX, newPotY, "ปักลงกระถาง");
+        else if (currentStep === 9) drawPulseTarget(newPotX, newPotY - 40, "รดน้ำ");
+
+      } else if (currentMode === 'budding') {
+        // Once topped, the rootstock's own canopy is cut away (reusing the
+        // same cutTop stump visual as the cutting-mode's harvested branch)
+        drawStylizedTree(canvas.width * 0.45, groundY, 1.25, { showLeaves: true, cutTop: simState.rootstockToppedOff });
+        drawStylizedTree(canvas.width * 0.75, groundY, 1.0, { showLeaves: true });
+
+        const { x: trunkX, y: trunkY } = getBuddingTrunkPos();
+        const { x: budSrcX, y: budSrcY } = getBuddingBudSourcePos();
+        const { x: topCutX, y: topCutY } = getBuddingTopCutPos();
+
+        // The bud node stays visible on the donor tree's stem until it's harvested
+        if (!simState.budEyeCut) drawBudMark(budSrcX, budSrcY);
+
+        // The T-cut incision on the rootstock (covered once tape goes on top of it)
+        if (simState.tCutMade && !simState.budTapeWrapped) {
+          ctx.strokeStyle = "#000"; ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(trunkX - 12, trunkY - 25); ctx.lineTo(trunkX + 12, trunkY - 25);
+          ctx.moveTo(trunkX, trunkY - 25); ctx.lineTo(trunkX, trunkY + 25);
+          ctx.stroke();
+        }
+
+        // Tape wraps around the area, drawn BEHIND the bud so the bud stays
+        // the frontmost, visible layer - conveys "wrapped around" rather
+        // than "pressed down covering" the bud
+        if (simState.budTapeWrapped) {
+          ctx.fillStyle = "rgba(59, 130, 246, 0.85)";
+          ctx.fillRect(trunkX - 28, trunkY - 30, 56, 60); // matches the trunk's full visual width (~55px) so no bare edge shows
+        }
+
+        // The harvested bud chip itself: sitting on the donor tree, mid-carry,
+        // or seated in the T-cut - a real object the whole way, not a teleport
+        if (simState.budEyeCut && !simState.budEyeInserted) {
+          drawBudChip(simState.budEyePos.x, simState.budEyePos.y);
+        }
+        if (simState.budEyeInserted) {
+          drawBudChip(trunkX, trunkY);
+        }
+
+        // Once the graft has taken, a new shoot sprouts from the bud union,
+        // leaning diagonally to the left, and grows bigger as it's watered
+        if (simState.budTaken) {
+          const growScale = 0.4 + (simState.shootWaterLevel / 100) * 1.0;
+          const shootAngle = -20 * Math.PI / 180; // tilts the tip up and to the left
+          const shootLen = 40 * growScale;
+          const tipX = trunkX + Math.sin(shootAngle) * shootLen;
+          const tipY = trunkY - Math.cos(shootAngle) * shootLen;
+
+          ctx.save();
+          ctx.translate(trunkX, trunkY);
+          ctx.rotate(shootAngle);
+          ctx.fillStyle = "#78350f";
+          ctx.fillRect(-4, -shootLen, 8, shootLen);
+          ctx.restore();
+
+          drawLeafCloud(tipX, tipY - 5, 20 * growScale);
+        }
+
+        if (currentStep === 1) drawPulseTarget(trunkX, trunkY, "กรีดแผลตัว T");
+        else if (currentStep === 2) drawPulseTarget(budSrcX, budSrcY, "เฉือนตา");
+        else if (currentStep === 3) !simState.budEyeHeld ? drawPulseTarget(simState.budEyePos.x, simState.budEyePos.y, "จับตา") : drawPulseTarget(trunkX, trunkY, "วางบนแผล T");
+        else if (currentStep === 4) drawPulseTarget(trunkX, trunkY, "พันเทป");
+        else if (currentStep === 6) drawPulseTarget(trunkX, trunkY - 20, "รดน้ำ");
+        else if (currentStep === 7) drawPulseTarget(topCutX, topCutY, "ตัดยอดทิ้ง");
+
+      } else if (currentMode === 'inarching') {
+        const potPos = getInarchingPotPos();
+        const origin = getInarchingBranchOrigin();
+        const tip = getInarchingBranchTip();
+        const union = getInarchingUnionPos();
+        const cutPos = getInarchingCutPos();
+        const branchAngle = Math.atan2(tip.y - origin.y, tip.x - origin.x);
+
+        // Mother tree: suppress its default straight right branch (branchCut
+        // hides it) and draw our own diagonal one instead. Once harvested, a
+        // short STUB (origin to the cut point) is left behind, with no
+        // leaves - the leafy portion beyond the cut came away with the graft.
+        // The trunk-side end keeps its natural round cap; only the cut end
+        // gets a flat cross-section cap overlaid on top.
+        drawStylizedTree(canvas.width * 0.35, groundY, 2.0, { showLeaves: true, branchCut: true, hideBranch: true, showPot: false, plantedInGround: true, trunkWidthScale: 2, leftBranchLength: 125 });
+        if (!simState.inarchHarvested) {
+          drawDiagonalBranch(origin, tip, true);
+        } else {
+          drawDiagonalBranch(origin, cutPos, false);
+          drawFlatCutCap(cutPos, branchAngle, 43);
+        }
+
+        // The rootstock, through its full lifecycle. Show the bare-root
+        // version (following the hand) as soon as dragging starts, not only
+        // after the pull is released - so roots are visible from the moment
+        // it comes out of the pot. Drawn BEFORE the wound/tape below so the
+        // tape ends up layered on top of both the branch and this stem.
+        // The tilt (once approached) is kept through harvest and carrying,
+        // so the stump and its attached branch segment stay consistently
+        // angled instead of the stump snapping back upright.
+        const inarchTiltDeg = simState.inarchApproached ? INARCH_APPROACH_TILT_DEG : 0;
+        if (!simState.inarchRootstockPulled && !simState.inarchRootstockHeld) {
+          drawStylizedTree(potPos.x, potPos.y, 1.0, { showLeaves: true });
+        } else {
+          drawStylizedTree(potPos.x, potPos.y, 1.0, { showTree: false }); // pot left behind, empty
+
+          if (!simState.inarchPlantedInPot) {
+            drawInarchingRootstockAt(simState.inarchRootstockPos, {
+              cutTop: simState.inarchTopCut,
+              rootStyle: simState.inarchRootsTrimmed ? 'taproot' : 'full',
+              showWrap: simState.inarchTapRootWrapped,
+              wrapTaped: simState.inarchTapRootTaped,
+              wrapWatered: simState.inarchTapRootWatered,
+              wrapRootsGrown: false,
+              tiltDeg: inarchTiltDeg
+            });
+            if (simState.inarchHarvested) {
+              // The piece of mother-tree branch (with leaves) that came away
+              // together with the graft. Its attachment point is the
+              // rootstock's cut face, found by rotating the same local
+              // offset used for the stump itself - so it follows correctly
+              // whether resting in place or being dragged around.
+              const attachPos = getInarchRotatedPoint(simState.inarchRootstockPos, inarchTiltDeg, 0, -135);
+              const branchLen = Math.hypot(tip.x - union.x, tip.y - union.y);
+              drawHarvestedBranchSegment(attachPos, branchAngle, branchLen, 0.04);
+            }
+          } else {
+            // Finally replanted: the SAME model as when harvested (stump +
+            // attached leafy branch + wrap ball), standing in one straight
+            // vertical line, with the wrap ball (roots showing inside it)
+            // visible in the pot. Starts at the SAME size as when harvested
+            // (not smaller), then growth from watering goes into HEIGHT and
+            // leaf count (more clusters), not girth - so it gets taller and
+            // leafier without ballooning sideways. New lateral roots regrow
+            // around the taproot once established (unlike the bare taproot
+            // kept deliberately during grafting).
+            const potScale = 0.9;
+            let heightScale = 1.0; let leafTier = 1;
+            if (simState.inarchGrowWaterLevel >= 40) { heightScale = 1.3; leafTier = 2; }
+            if (simState.inarchGrowWaterLevel >= 75) { heightScale = 1.6; leafTier = 3; }
+            const buriedPos = { x: potPos.x, y: potPos.y + 35 };
+            const stumpWidthScale = 43 / 32; // widen the stump so it matches the branch's own width (43px)
+            drawInarchingRootstockAt(buriedPos, {
+              scale: potScale,
+              cutTop: true,
+              rootStyle: 'full',
+              showWrap: true,
+              wrapTaped: true,
+              wrapWatered: false,
+              wrapRootsGrown: false,
+              tiltDeg: 0,
+              stumpWidthScale: stumpWidthScale
+            });
+            const plantedAttachPos = { x: potPos.x, y: buriedPos.y - 150 * potScale };
+            const baseBranchLen = Math.hypot(tip.x - union.x, tip.y - union.y);
+            const mainBranchLen = baseBranchLen * heightScale;
+            drawHarvestedBranchSegment(plantedAttachPos, -Math.PI / 2, mainBranchLen, 0.04, 1, leafTier);
+
+            // A new side branch sprouts diagonally upward, with small leaves,
+            // as the plant matures from watering
+            if (leafTier >= 2) {
+              const sideOrigin = { x: plantedAttachPos.x, y: plantedAttachPos.y - mainBranchLen * 0.45 };
+              const sideAngle = -Math.PI / 2 + (35 * Math.PI / 180);
+              const sideLen = leafTier >= 3 ? 85 : 60;
+              const sideEndX = sideOrigin.x + Math.cos(sideAngle) * sideLen;
+              const sideEndY = sideOrigin.y + Math.sin(sideAngle) * sideLen;
+              ctx.save();
+              ctx.strokeStyle = "#92400e"; ctx.lineWidth = 14; ctx.lineCap = "round";
+              ctx.beginPath(); ctx.moveTo(sideOrigin.x, sideOrigin.y); ctx.lineTo(sideEndX, sideEndY); ctx.stroke();
+              ctx.restore();
+              drawLeafCloud(sideEndX, sideEndY - 8, 22);
+              drawLeafCloud(sideEndX + 14, sideEndY + 5, 17);
+            }
+
+            // Redraw the pot on top so it occludes the wrap ball and the
+            // lower part of the stem, like they're planted in soil
+            drawStylizedTree(potPos.x, potPos.y, 1.0, { showTree: false });
+          }
+        }
+
+        // Wound + tape at the union - sits near the branch's base (not at
+        // the far leafy tip), rotated to align with the branch's diagonal
+        // angle so it reads as wrapped ALONG the branch. Drawn AFTER the
+        // rootstock above, so once taped it visually covers both the branch
+        // and the approached stem, not hidden underneath the stem.
+        if (!simState.inarchHarvested) {
+          ctx.save();
+          ctx.translate(union.x, union.y);
+          ctx.rotate(branchAngle);
+          if (simState.inarchTapeBound) {
+            ctx.fillStyle = "rgba(59, 130, 246, 0.85)";
+            ctx.fillRect(-40, -24, 80, 48);
+          } else if (simState.inarchBranchWounded) {
+            ctx.fillStyle = "#fef3c7";
+            ctx.fillRect(-27, -16, 56, 32);
+          }
+          ctx.restore();
+        }
+
+        if (currentStep === 1) drawPulseTarget(potPos.x, potPos.y - 100, "ยกออกจากกระถาง");
+        else if (currentStep === 2) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y - 135, "ตัดยอด");
+        else if (currentStep === 3) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 45, "ตัดรากแขนง");
+        else if (currentStep === 4) drawPulseTarget(union.x, union.y, "เปิดแผล");
+        else if (currentStep === 5) !simState.inarchRootstockHeld ? drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y, "จับต้นตอ") : drawPulseTarget(union.x, union.y, "นำมาทาบ");
+        else if (currentStep === 6) drawPulseTarget(union.x, union.y, "พันเทป");
+        else if (currentStep === 7) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 44, "ใส่ตุ้ม");
+        else if (currentStep === 8) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 44, "รดน้ำ");
+        else if (currentStep === 9) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 44, "พันเทป");
+        else if (currentStep === 11) drawPulseTarget(cutPos.x, cutPos.y, "ตัด(ใต้เทปนิดเดียว)");
+        else if (currentStep === 12) !simState.inarchRootstockHeld ? drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y, "จับกิ่ง") : drawPulseTarget(potPos.x, potPos.y, "ปักลงกระถาง");
+        else if (currentStep === 13) drawPulseTarget(potPos.x, potPos.y - 60, "รดน้ำ");
+
+      } else if (currentMode === 'grafting') {
+        const { x: topX, y: topY } = getGraftingRootstockTopPos();
+        const donorPos = getGraftingDonorPos();
+        const rBranch = getGraftingDonorRightBranchPos();
+        const lBranch = getGraftingDonorLeftBranchPos();
+        const basePos = getGraftingDonorBasePos();
+
+        drawStylizedTree(canvas.width * 0.45, groundY, 1.25, { cutTop: simState.rootstockTopCut, stemSplit: simState.stemSplit });
+
+        // The donor tree: already prepared, standing free without a pot.
+        // Shown at its resting spot until picked up in step 6; once carried
+        // or inserted, IT is the object drawn at simState.scionPos - the
+        // same tree, same scale, not a separately-spawned twig.
+        if (!simState.scionHeld && !simState.scionInserted) {
+          drawGraftingDonorTree(donorPos, {
+            hideRightBranch: simState.scionRightBranchCut,
+            hideLeftBranch: simState.scionLeftBranchCut,
+            baseWedge: simState.scionWedged
+          });
+        } else {
+          drawGraftingDonorTree(simState.scionPos, {
+            hideRightBranch: true, hideLeftBranch: true, baseWedge: true
+          });
+        }
+
+        if (simState.graftTapeBound) {
+          ctx.fillStyle = "rgba(59, 130, 246, 0.8)"; ctx.fillRect(topX - 20, topY - 10, 40, 55);
+        }
+
+        if (currentStep === 1) drawPulseTarget(topX, topY, "ตัดยอด");
+        else if (currentStep === 2) drawPulseTarget(topX, topY, "ผ่าลิ่ม");
+        else if (currentStep === 3) drawPulseTarget(rBranch.x, rBranch.y, "ตัดแต่งกิ่งขวา");
+        else if (currentStep === 4) drawPulseTarget(lBranch.x, lBranch.y, "ตัดแต่งกิ่งซ้าย");
+        else if (currentStep === 5) drawPulseTarget(basePos.x, basePos.y, "เฉือนรูปตัว V");
+        else if (currentStep === 6) !simState.scionHeld ? drawPulseTarget(simState.scionPos.x, simState.scionPos.y, "จับต้น") : drawPulseTarget(topX, topY + 45, "เสียบยอด");
+        else if (currentStep === 7) drawPulseTarget(topX, topY + 15, "พันเทป");
+      }
+    }
+
+    function renderHandToolCursor() {
+      // Hide cursor if we are not actively tracking mouse/hand to keep AR clean
+      if (!handPos.detected && !handPos.isPinching && useARCamera) return; 
+
+      ctx.save(); ctx.translate(handPos.x, handPos.y);
+      ctx.font = "40px Kanit";
+      let icon = "🖐️";
+      if (selectedTool === 'scissors') icon = "✂️"; else if (selectedTool === 'knife') icon = "🔪";
+      else if (selectedTool === 'coconut') icon = "🥥"; else if (selectedTool === 'tape') icon = "🩹";
+      else if (selectedTool === 'water') icon = "🚿";
+      
+      // Draw Icon slightly offset
+      ctx.fillText(icon, -20, 15);
+      
+      // Draw Action Circle
+      ctx.strokeStyle = handPos.isPinching ? '#22c55e' : 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, handPos.isPinching ? 22 : 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    // --- Main Game Loop ---
+    
+    let lastFrameTs = performance.now();
+
+    function renderFrame() {
+      const now = performance.now();
+      const dtMs = now - lastFrameTs;
+      lastFrameTs = now;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 0. Hands-free dwell selection for the tool dock (HTML overlay, not canvas)
+      processToolHover(dtMs);
+      // 0b. Dwell-hold circle for the air-layering "wait 45-60 days" step
+      processWaitCircleHover(dtMs);
+      // 0c. Dwell-hold circle for the "Finish" reward, once a mode is complete
+      processFinishCircleHover(dtMs);
+
+      // 1. Draw AR Camera Feed (if active)
+      if (useARCamera && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+        ctx.save(); ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+        const vRatio = videoElement.videoWidth / videoElement.videoHeight;
+        const cRatio = canvas.width / canvas.height;
+        let dW, dH, oX, oY;
+        if (cRatio > vRatio) { dW = canvas.width; dH = canvas.width / vRatio; oX = 0; oY = (canvas.height - dH) / 2; } 
+        else { dW = canvas.height * vRatio; dH = canvas.height; oX = (canvas.width - dW) / 2; oY = 0; }
+        ctx.drawImage(videoElement, oX, oY, dW, dH);
+        ctx.restore();
+      }
+
+      // 2. Draw Simulated Environment Layer
+      const groundY = canvas.height * 0.85;
+      
+      // Background in two sections: transparent white (sky area, with cloud
+      // shapes floating in it instead of a flat blue fill), then the
+      // existing green ground plane (bottom)
+      ctx.fillStyle = useARCamera ? 'rgba(255, 255, 255, 0.2)' : '#f1f5f9';
+      ctx.fillRect(0, 0, canvas.width, groundY);
+
+      // A few fluffy clouds sitting in the upper sky area
+      const cloudAlpha = useARCamera ? 0.55 : 0.9;
+      drawCloud(canvas.width * 0.15, canvas.height * 0.10, 1.1, cloudAlpha);
+      drawCloud(canvas.width * 0.55, canvas.height * 0.16, 0.8, cloudAlpha);
+      drawCloud(canvas.width * 0.85, canvas.height * 0.08, 0.95, cloudAlpha);
+
+      // Ground plane
+      ctx.fillStyle = 'rgba(20, 83, 45, 0.8)';
+      ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(canvas.width, groundY);
+      ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(0, canvas.height); ctx.fill();
+
+      // 3. Process Logic & Render
+      renderModeScene(groundY);
+      processStepInteractions();
+
+      // 4. Render Particles Layer
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i]; p.x += p.vx; p.y += p.vy; p.life--;
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (Math.max(p.life, 0) / 50), 0, Math.PI*2); ctx.fill();
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      for (let i = leafParticles.length - 1; i >= 0; i--) {
+        let p = leafParticles[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.2; p.life--;
+        ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+        if (p.life <= 0) leafParticles.splice(i, 1);
+      }
+
+      // 5. Render Virtual Tool Cursor
+      renderHandToolCursor();
+      
+      requestAnimationFrame(renderFrame);
+    }
+
+    // --- MediaPipe Hand Tracking Setup ---
+
+    let cameraInstance = null;
+    function startCamera() {
+      // Already initialised - just restart the existing instance rather than
+      // building a second MediaPipe pipeline on every AR toggle
+      if (cameraInstance) {
+        cameraInstance.start().catch((err) => handleCameraFailure(err));
+        return;
+      }
+      if(!window.Hands || !window.Camera) {
+          // Retry if libraries not loaded yet
+          setTimeout(startCamera, 500);
+          return;
+      }
+
+      const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+      hands.setOptions({
+        maxNumHands: 1, modelComplexity: 1, 
+        minDetectionConfidence: 0.6, minTrackingConfidence: 0.6
+      });
+
+      hands.onResults((results) => {
+        if (!useARCamera) return;
+        
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const landmarks = results.multiHandLandmarks[0];
+
+          // Mirror X-axis for natural movement
+          const idxX = (1 - landmarks[8].x); const idxY = landmarks[8].y;
+          const thumbX = (1 - landmarks[4].x); const thumbY = landmarks[4].y;
+
+          // Track the index fingertip itself - this is what points at and
+          // selects tools (via dwell-hover). Pinching (index+thumb together)
+          // stays a separate gesture used to actually operate the selected tool.
+          handPos.x = idxX * canvas.width;
+          handPos.y = idxY * canvas.height;
+
+          // Pinch distance between Index (8) and Thumb (4)
+          const pinchDist = Math.hypot(idxX - thumbX, idxY - thumbY);
+          handPos.isPinching = pinchDist < 0.05;
+          handPos.detected = true;
+          handPos.lastUpdate = performance.now();
+          
+          document.getElementById('handStatusDot').classList.replace('bg-red-500', 'bg-emerald-500');
+          document.getElementById('handStatusText').innerText = "พบมือแล้ว (ใช้มือได้)";
+          
+          if(handPos.isPinching) document.getElementById('pinchIndicator').classList.remove('hidden');
+          else document.getElementById('pinchIndicator').classList.add('hidden');
+        } else {
+          handPos.detected = false; handPos.isPinching = false;
+          document.getElementById('handStatusDot').classList.replace('bg-emerald-500', 'bg-red-500');
+          document.getElementById('handStatusText').innerText = "กำลังค้นหามือผ่านกล้อง... (แตะจอ/ใช้เมาส์แทนได้)";
+          document.getElementById('pinchIndicator').classList.add('hidden');
+        }
+      });
+
+      cameraInstance = new window.Camera(videoElement, { 
+        onFrame: async () => { await hands.send({image: videoElement}); }, 
+        width: 640, height: 480 
+      });
+      cameraInstance.start().catch((err) => handleCameraFailure(err));
+    }
+
+    function handleCameraFailure(err) {
+      console.warn('Camera unavailable, falling back to touch/mouse control:', err);
+      useARCamera = false;
+      document.getElementById('camModeText').innerText = "AR (ปิด)";
+      document.getElementById('handStatusDot').classList.remove('bg-red-500', 'bg-emerald-500');
+      document.getElementById('handStatusDot').classList.add('bg-amber-500');
+      document.getElementById('handStatusText').innerText = "ไม่พบกล้อง - แตะจอเล่นได้เลย";
+    }
+
+    // --- Application Start ---
+    updateStepUI();
+    renderFrame();
+    // Note: startCamera() is NOT called here on purpose. The camera is only
+    // requested when the person actually presses the AR button, so opening
+    // the app never triggers a permission prompt.
+
+    // App shell: fetch the student list in the background, then move from
+    // the loading screen to the login screen after a short, friendly pause
+    fetchInitData();
+    setTimeout(() => showAppScreen('screenLogin'), 1900);
+
+  </script>
+</body>
+</html>
