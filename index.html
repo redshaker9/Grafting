@@ -306,6 +306,93 @@
       .mode-packet, .btn-primary { transition: none; }
     }
 
+    /* ---- Tool dock: adapts so it never covers the play area ---- */
+    .tool-dock {
+      position: absolute; z-index: 20;
+      left: 1rem; top: 50%; transform: translateY(-50%); width: 17rem;
+    }
+    .tool-dock-title {
+      font-size: .7rem; font-weight: 700; color: #E8F2DC;
+      text-transform: uppercase; letter-spacing: .06em;
+      margin-bottom: .5rem; display: flex; align-items: center; gap: .4rem;
+      text-shadow: 0 1px 4px rgba(0,0,0,.5);
+    }
+    .tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+    .tool-tile {
+      position: relative; overflow: hidden; cursor: pointer;
+      border-radius: .75rem; aspect-ratio: 1 / 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: .3rem;
+    }
+    .tool-icon { font-size: 2.1rem; line-height: 1; }
+    .tool-label {
+      font-size: .72rem; font-weight: 700; color: #000;
+      text-align: center; line-height: 1.15; padding: 0 .2rem;
+    }
+    .hover-progress {
+      position: absolute; bottom: 0; left: 0; height: 5px; width: 0;
+      background: #4ade80; transition: width .075s linear; z-index: 1;
+    }
+
+    /* Narrow or short screens (phones, small windows): dock becomes a
+       compact bottom bar so the stage above it stays fully visible. */
+    @media (max-width: 1023px), (max-height: 620px) {
+      .tool-dock {
+        left: 0; right: 0; top: auto; bottom: 0; width: auto;
+        transform: none;
+        background: linear-gradient(to top, rgba(8, 20, 10, .82), rgba(8, 20, 10, 0));
+        padding: .35rem .4rem .4rem;
+      }
+      .tool-dock-panel { padding: 0 !important; }
+      .tool-dock-title { display: none; }
+      .tool-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: .3rem; max-width: 34rem; margin: 0 auto;
+      }
+      .tool-tile { aspect-ratio: auto; padding: .4rem .1rem .5rem; gap: .15rem; }
+      .tool-icon { font-size: 1.5rem; }
+      .tool-label { font-size: .55rem; color: #fff; }
+    }
+
+    /* Finish reward circle - sits clear of the tool dock in both layouts */
+    .finish-circle-panel {
+      position: absolute; z-index: 30;
+      left: 50%; transform: translateX(-50%); bottom: 7rem;
+    }
+    @media (max-width: 1023px), (max-height: 620px) {
+      .finish-circle-panel { bottom: 6.5rem; }
+    }
+
+    /* Rotate hint - hidden by default, only surfaces on narrow portrait */
+    .rotate-hint { display: none; }
+    @media (max-width: 1023px) and (orientation: portrait) {
+      .rotate-hint {
+        display: flex; align-items: center; gap: .4rem;
+        position: absolute; z-index: 25;
+        left: 50%; transform: translateX(-50%); top: 4.6rem;
+        background: rgba(8, 20, 10, .82); color: #EAF4DC;
+        font-size: .72rem; padding: .45rem .8rem; border-radius: 999px;
+        white-space: nowrap; pointer-events: none;
+        animation: hintFade 7s ease forwards;
+      }
+      .rotate-hint-icon { font-size: .9rem; }
+      @keyframes hintFade {
+        0%, 78% { opacity: 1; }
+        100%    { opacity: 0; visibility: hidden; }
+      }
+    }
+
+    /* Hand-tracking status: useful detail on desktop, but on small screens it
+       collides with the centred step banner - and the AR button already says
+       whether the camera is on, so it's dropped there. */
+    .hand-status-stack {
+      position: absolute; z-index: 20; top: 10rem; right: 1rem;
+      display: flex; flex-direction: column; align-items: flex-end; gap: .5rem;
+    }
+    @media (max-width: 1023px), (max-height: 620px) {
+      .hand-status-stack { display: none; }
+    }
+
     /* Live dwell-hover feedback while a fingertip/cursor rests over a tool card */
     .tool-card.hover-live {
       border-color: rgba(74, 222, 128, 0.7) !important;
@@ -502,19 +589,25 @@
 
   </div>
 
+  <!-- Portrait hint: the stage is landscape-shaped, so on a tall phone it
+       renders small. Shown only in narrow portrait, and fades itself out. -->
+  <div class="rotate-hint" aria-hidden="true">
+    <span class="rotate-hint-icon">📱</span> หมุนจอเป็นแนวนอน จะเล่นได้เต็มจอกว่า
+  </div>
+
   <!-- Main AR Canvas Viewport -->
   <canvas id="arCanvas" class="absolute inset-0 z-0"></canvas>
   <video id="webcamVideo" playsinline></video>
 
   <!-- Top Right: Student Points Display -->
-  <div class="absolute top-20 right-4 z-20 glass-panel rounded-xl px-3 py-2 flex items-center gap-2">
+  <div class="absolute top-4 right-4 z-20 glass-panel rounded-xl px-3 py-2 flex items-center gap-2">
     <span class="text-xl">⭐</span>
     <span id="pointsValue" class="text-lg font-bold text-yellow-300">0</span>
     <span class="text-xs text-slate-300">Point</span>
   </div>
 
   <!-- Top Left: Menu + AR toggle -->
-  <div class="absolute top-20 left-4 z-20 flex items-center gap-2">
+  <div class="absolute top-4 left-4 z-20 flex items-center gap-2">
     <button onclick="backToModeSelect()" class="glass-panel rounded-xl px-3 py-2 text-xs text-slate-200 flex items-center gap-1.5 hover:text-white">
       <i class="fa-solid fa-house text-emerald-400"></i> เมนู
     </button>
@@ -523,90 +616,62 @@
     </button>
   </div>
 
-  <!-- Top Navigation: Mode Selector (5 Modes) -->
-  <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[95%] max-w-5xl">
-    <div class="glass-panel rounded-2xl p-2.5 flex items-center justify-between gap-2 overflow-x-auto">
-      <div class="flex items-center gap-2 pl-2">
-        <i class="fa-solid fa-seedling text-emerald-400 text-2xl"></i>
-        <span class="font-bold text-lg hidden md:inline text-emerald-300">การขยายพันธุ์พืช AR</span>
-      </div>
 
-      <div class="flex items-center gap-1.5 flex-1 flex-wrap justify-center">
-        <button id="mode-cutting" onclick="switchMode('cutting')" class="mode-btn glass-btn active rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
-          <i class="fa-solid fa-scissors text-xs"></i> 1. การปักชำ
-        </button>
-        <button id="mode-layering" onclick="switchMode('layering')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
-          <i class="fa-solid fa-circle-nodes text-xs"></i> 2. การตอนกิ่ง
-        </button>
-        <button id="mode-budding" onclick="switchMode('budding')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
-          <i class="fa-solid fa-eye text-xs"></i> 3. การติดตา
-        </button>
-        <button id="mode-inarching" onclick="switchMode('inarching')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
-          <i class="fa-solid fa-code-branch text-xs"></i> 4. การทาบกิ่ง
-        </button>
-        <button id="mode-grafting" onclick="switchMode('grafting')" class="mode-btn glass-btn rounded-xl px-2.5 py-1.5 text-xs sm:text-sm font-semibold flex items-center gap-1.5 text-white">
-          <i class="fa-solid fa-tree text-xs"></i> 5. การเสียบยอด
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Left Side: Interactive Tool Dock (2x3 grid) -->
-  <div class="absolute left-16 top-60 z-20 w-72">
+  <!-- Interactive Tool Dock: left panel on wide screens, bottom bar on narrow -->
+  <div id="toolDock" class="tool-dock">
     <div class="tool-dock-panel rounded-2xl p-3">
-      <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+      <h3 class="tool-dock-title">
         <i class="fa-solid fa-toolbox text-emerald-400"></i> อุปกรณ์ขยายพันธุ์
       </h3>
 
-      <div class="grid grid-cols-2 gap-2">
+      <div class="tool-grid">
         <!-- Tool 0: Hand for Grabbing -->
-        <div id="tool-hand" class="tool-card hover-target relative glass-btn bg-emerald-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="hand">
-          <div class="text-4xl">🖐️</div>
-          <div class="text-xs font-bold text-black text-center leading-tight px-1">มือจับกิ่ง</div>
-          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        <div id="tool-hand" class="tool-card hover-target tool-tile glass-btn bg-emerald-500/10" data-tool="hand">
+          <div class="tool-icon">🖐️</div>
+          <div class="tool-label">มือจับกิ่ง</div>
+          <div class="hover-progress"></div>
         </div>
 
         <!-- Tool 1: Scissors -->
-        <div id="tool-scissors" class="tool-card hover-target relative glass-btn bg-red-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="scissors">
-          <div class="text-4xl">✂️</div>
-          <div class="text-xs font-bold text-black text-center leading-tight px-1">กรรไกรตัดแต่ง</div>
-          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        <div id="tool-scissors" class="tool-card hover-target tool-tile glass-btn bg-red-500/10" data-tool="scissors">
+          <div class="tool-icon">✂️</div>
+          <div class="tool-label">กรรไกรตัดแต่ง</div>
+          <div class="hover-progress"></div>
         </div>
 
         <!-- Tool 2: Knife -->
-        <div id="tool-knife" class="tool-card hover-target relative glass-btn bg-amber-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="knife">
-          <div class="text-4xl">🔪</div>
-          <div class="text-xs font-bold text-black text-center leading-tight px-1">มีดขยายพันธุ์</div>
-          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        <div id="tool-knife" class="tool-card hover-target tool-tile glass-btn bg-amber-500/10" data-tool="knife">
+          <div class="tool-icon">🔪</div>
+          <div class="tool-label">มีดขยายพันธุ์</div>
+          <div class="hover-progress"></div>
         </div>
 
         <!-- Tool 3: Coconut Ball -->
-        <div id="tool-coconut" class="tool-card hover-target relative glass-btn bg-yellow-700/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="coconut">
-          <div class="text-4xl">🥥</div>
-          <div class="text-xs font-bold text-black text-center leading-tight px-1">ตุ้มขุยมะพร้าว</div>
-          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        <div id="tool-coconut" class="tool-card hover-target tool-tile glass-btn bg-yellow-700/10" data-tool="coconut">
+          <div class="tool-icon">🥥</div>
+          <div class="tool-label">ตุ้มขุยมะพร้าว</div>
+          <div class="hover-progress"></div>
         </div>
 
         <!-- Tool 4: Tape -->
-        <div id="tool-tape" class="tool-card hover-target relative glass-btn bg-blue-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="tape">
-          <div class="text-4xl">🩹</div>
-          <div class="text-xs font-bold text-black text-center leading-tight px-1">เทปพลาสติกพันกิ่ง</div>
-          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        <div id="tool-tape" class="tool-card hover-target tool-tile glass-btn bg-blue-500/10" data-tool="tape">
+          <div class="tool-icon">🩹</div>
+          <div class="tool-label">เทปพลาสติกพันกิ่ง</div>
+          <div class="hover-progress"></div>
         </div>
 
         <!-- Tool 5: Water Can -->
-        <div id="tool-water" class="tool-card hover-target relative glass-btn bg-cyan-500/10 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer overflow-hidden aspect-square" data-tool="water">
-          <div class="text-4xl">🚿</div>
-          <div class="text-xs font-bold text-black text-center leading-tight px-1">ฝักบัวรดน้ำ</div>
-          <div class="hover-progress absolute bottom-0 left-0 h-1.5 bg-emerald-400 w-0 transition-all duration-75"></div>
+        <div id="tool-water" class="tool-card hover-target tool-tile glass-btn bg-cyan-500/10" data-tool="water">
+          <div class="tool-icon">🚿</div>
+          <div class="tool-label">ฝักบัวรดน้ำ</div>
+          <div class="hover-progress"></div>
         </div>
       </div>
     </div>
   </div>
 
   <!-- Top Center: Step Guide Banner -->
-  <div class="absolute top-20 left-1/2 -translate-x-1/2 z-20 w-[90%] max-w-3xl">
+  <div class="absolute top-24 left-1/2 -translate-x-1/2 z-20 w-[90%] max-w-3xl">
     <div class="glass-panel rounded-2xl p-3 sm:p-4 flex items-center flex-wrap justify-between gap-3 sm:gap-4 border-l-4 border-l-emerald-500">
       <div class="flex items-center gap-3 min-w-0">
         <div id="stepNumberBadge" class="w-10 h-10 shrink-0 rounded-xl bg-emerald-500/20 border border-emerald-400/50 flex items-center justify-center text-emerald-400 font-bold text-lg">
@@ -639,7 +704,7 @@
   </div>
 
   <!-- Top Right: Gesture & Tracking Status Overlay -->
-  <div class="absolute top-36 right-2 sm:right-4 z-20 flex flex-col items-end gap-2">
+  <div class="hand-status-stack">
     <div class="glass-panel rounded-xl px-2.5 sm:px-3 py-2 text-xs font-semibold flex items-center gap-2">
       <div id="handStatusDot" class="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></div>
       <span id="handStatusText" class="hidden sm:inline">โหมดแตะจอ - กด AR เพื่อใช้กล้อง</span>
@@ -673,7 +738,7 @@
   <!-- Bottom Center: "Finish" dwell-circle - appears once all steps of the
        current mode are complete, replacing the old Finish button. Holding a
        fingertip inside it awards points via a gift-box popup. -->
-  <div id="finishCirclePanel" class="absolute bottom-28 left-1/2 -translate-x-1/2 z-30 hidden flex flex-col items-center gap-2">
+  <div id="finishCirclePanel" class="finish-circle-panel hidden flex flex-col items-center gap-2">
     <div id="finishCircleHitzone" class="relative w-28 h-28 sm:w-36 sm:h-36 flex items-center justify-center">
       <svg viewBox="0 0 120 120" class="absolute inset-0 w-full h-full -rotate-90">
         <circle cx="60" cy="60" r="52" fill="rgba(34,197,94,0.28)" stroke="rgba(255,255,255,0.3)" stroke-width="6" />
@@ -703,12 +768,37 @@
     const ctx = canvas.getContext('2d');
     const videoElement = document.getElementById('webcamVideo');
 
+    // ============================================================
+    // VIRTUAL STAGE
+    // The scene is authored in a fixed "world" of WORLD_W x WORLD_H and
+    // then scaled to fit whatever screen it's on. This keeps every scene
+    // coordinate (tree positions, cut points, target radii) stable across
+    // phones, tablets and desktops instead of drifting with the viewport.
+    // Screen space is still used for the HTML overlays and camera feed.
+    // ============================================================
+    const WORLD_W = 1280;
+    const WORLD_H = 760;
+    const WORLD_GROUND_Y = WORLD_H * 0.85;
+    let view = { scale: 1, offsetX: 0, offsetY: 0 };
+
+    function updateViewTransform() {
+      const s = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H);
+      view.scale = s;
+      view.offsetX = (canvas.width - WORLD_W * s) / 2;
+      view.offsetY = (canvas.height - WORLD_H * s) / 2;
+    }
+    function screenToWorldX(x) { return (x - view.offsetX) / view.scale; }
+    function screenToWorldY(y) { return (y - view.offsetY) / view.scale; }
+    function worldToScreenY(y) { return y * view.scale + view.offsetY; }
+
     // Resize canvas
     function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      updateViewTransform();
     }
     window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
     resizeCanvas();
 
     // Global App State
@@ -718,8 +808,15 @@
     let currentStep = 1;
     let lastEvaluatedSuccess = false;
 
-    // Hand Tracking / Mouse State
+    // Hand Tracking / Mouse State.
+    // handPos stays in SCREEN space (HTML overlays hit-test against it);
+    // worldPos is the same point mapped into stage space for scene logic.
     let handPos = { detected: false, x: canvas.width / 2, y: canvas.height / 2, isPinching: false, lastUpdate: 0 };
+    let worldPos = { x: WORLD_W / 2, y: WORLD_H / 2 };
+    function updateWorldPos() {
+      worldPos.x = screenToWorldX(handPos.x);
+      worldPos.y = screenToWorldY(handPos.y);
+    }
     let particles = [];
     let leafParticles = [];
 
@@ -1035,7 +1132,7 @@
     }
     function confirmFinishReward() {
       playSound('success');
-      spawnSuccessSparkles(canvas.width / 2, canvas.height * 0.35);
+      spawnSuccessSparkles(WORLD_W / 2, WORLD_H * 0.35);
       awardPoints(100);
       showGiftBoxReward(100);
       hideFinishCirclePanel();
@@ -1089,13 +1186,9 @@
     }
 
     function switchMode(mode) {
+      // The in-game mode tab bar was removed - modes are chosen from the
+      // menu screen now, so this just sets the mode and resets its progress.
       currentMode = mode;
-      document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.classList.remove('active', 'bg-emerald-500/30', 'border-emerald-500');
-        if (btn.id === 'mode-' + mode) {
-          btn.classList.add('active', 'bg-emerald-500/30', 'border-emerald-500');
-        }
-      });
       resetCurrentMode();
     }
 
@@ -1204,15 +1297,15 @@
 
     function processStepInteractions() {
       const isPinch = handPos.isPinching;
-      const groundY = canvas.height * 0.85;
+      const groundY = WORLD_H * 0.85;
 
       if (currentMode === 'cutting') {
-        const targetCutX = canvas.width * 0.3 + 125;
+        const targetCutX = WORLD_W * 0.3 + 125;
         const targetCutY = groundY - 300;
-        const pot2X = canvas.width * 0.7; const pot2Y = groundY - 20;
+        const pot2X = WORLD_W * 0.7; const pot2Y = groundY - 20;
 
         if (currentStep === 1 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - targetCutX, handPos.y - targetCutY) < 70) {
+          if (Math.hypot(worldPos.x - targetCutX, worldPos.y - targetCutY) < 70) {
             simState.branchCut = true;
             simState.cutBranchPos = { x: targetCutX, y: targetCutY + 20 };
             currentStep = 2; updateStepUI(); spawnLeafParticles(targetCutX, targetCutY);
@@ -1221,25 +1314,25 @@
         // Step 2: grab the freshly-cut branch (leaves still full-size) and plant it in the empty pot
         else if (currentStep === 2 && selectedTool === 'hand') {
           if (isPinch && !simState.plantedBranchInPot) {
-            if (Math.hypot(handPos.x - simState.cutBranchPos.x, handPos.y - simState.cutBranchPos.y) < 90 || simState.cutBranchHeld) {
-              simState.cutBranchHeld = true; simState.cutBranchPos = { x: handPos.x, y: handPos.y };
+            if (Math.hypot(worldPos.x - simState.cutBranchPos.x, worldPos.y - simState.cutBranchPos.y) < 90 || simState.cutBranchHeld) {
+              simState.cutBranchHeld = true; simState.cutBranchPos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.cutBranchHeld) {
-            if (Math.hypot(handPos.x - pot2X, handPos.y - pot2Y) < 120) {
+            if (Math.hypot(worldPos.x - pot2X, worldPos.y - pot2Y) < 120) {
               simState.cutBranchHeld = false; simState.plantedBranchInPot = true; currentStep = 3; updateStepUI();
             } else { simState.cutBranchHeld = false; }
           }
         }
         // Step 3: now that it's planted, trim the leaves smaller to reduce transpiration
         else if (currentStep === 3 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - pot2X, handPos.y - (groundY - 15)) < 90) {
+          if (Math.hypot(worldPos.x - pot2X, worldPos.y - (groundY - 15)) < 90) {
             simState.leavesTrimmed = true; currentStep = 4; updateStepUI(); spawnLeafParticles(pot2X, groundY - 90);
           }
         }
         else if (currentStep === 4 && selectedTool === 'water' && isPinch) {
-          const potWaterX = canvas.width * 0.7; const potWaterY = groundY - 50;
-          if (Math.hypot(handPos.x - potWaterX, handPos.y - potWaterY) < 120) {
-            spawnWaterParticles(handPos.x, handPos.y);
+          const potWaterX = WORLD_W * 0.7; const potWaterY = groundY - 50;
+          if (Math.hypot(worldPos.x - potWaterX, worldPos.y - potWaterY) < 120) {
+            spawnWaterParticles(worldPos.x, worldPos.y);
             simState.wateredLevel += 2.0;
             if (simState.wateredLevel >= 100) { spawnSuccessSparkles(potWaterX, potWaterY); currentStep = 5; updateStepUI(); }
           }
@@ -1250,7 +1343,7 @@
         // Use the RIGHT branch (longer, less obscured by the canopy leaf clouds)
         const { x: branchX, y: branchY } = getLayeringBranchPos();
         const { x: newPotX, y: newPotY } = getLayeringNewPotPos();
-        const nearBranch = Math.hypot(handPos.x - branchX, handPos.y - branchY) < 80;
+        const nearBranch = Math.hypot(worldPos.x - branchX, worldPos.y - branchY) < 80;
 
         if (currentStep === 1 && selectedTool === 'knife' && isPinch) {
           if (nearBranch) {
@@ -1264,9 +1357,9 @@
         else if (currentStep === 2) {
           if (selectedTool === 'knife' && isPinch && nearBranch) {
             if (simState.scrapeLastY !== null) {
-              simState.scrapeProgress = Math.min(100, simState.scrapeProgress + Math.abs(handPos.y - simState.scrapeLastY) * 0.09);
+              simState.scrapeProgress = Math.min(100, simState.scrapeProgress + Math.abs(worldPos.y - simState.scrapeLastY) * 0.09);
             }
-            simState.scrapeLastY = handPos.y;
+            simState.scrapeLastY = worldPos.y;
             if (simState.scrapeProgress >= 100) {
               simState.cambiumScraped = true; currentStep = 3; updateStepUI(); simState.scrapeLastY = null;
             }
@@ -1282,7 +1375,7 @@
         // Step 4: water the wrapped husk so it's moist before sealing with tape
         else if (currentStep === 4 && selectedTool === 'water' && isPinch) {
           if (nearBranch && simState.coconutWrapped) {
-            spawnWaterParticles(handPos.x, handPos.y);
+            spawnWaterParticles(worldPos.x, worldPos.y);
             simState.ballWatered = true; currentStep = 5; updateStepUI();
           }
         }
@@ -1306,19 +1399,19 @@
         // Step 8: grab the harvested, already-rooted cutting (wrap ball still attached) and plant it
         else if (currentStep === 8 && selectedTool === 'hand') {
           if (isPinch && !simState.layerPlantedInPot) {
-            if (Math.hypot(handPos.x - simState.layerBranchPos.x, handPos.y - simState.layerBranchPos.y) < 90 || simState.layerBranchHeld) {
-              simState.layerBranchHeld = true; simState.layerBranchPos = { x: handPos.x, y: handPos.y };
+            if (Math.hypot(worldPos.x - simState.layerBranchPos.x, worldPos.y - simState.layerBranchPos.y) < 90 || simState.layerBranchHeld) {
+              simState.layerBranchHeld = true; simState.layerBranchPos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.layerBranchHeld) {
-            if (Math.hypot(handPos.x - newPotX, handPos.y - newPotY) < 120) {
+            if (Math.hypot(worldPos.x - newPotX, worldPos.y - newPotY) < 120) {
               simState.layerBranchHeld = false; simState.layerPlantedInPot = true; currentStep = 9; updateStepUI();
             } else { simState.layerBranchHeld = false; }
           }
         }
         // Step 9: water the newly planted cutting so it grows taller
         else if (currentStep === 9 && selectedTool === 'water' && isPinch) {
-          if (Math.hypot(handPos.x - newPotX, handPos.y - (newPotY - 40)) < 110) {
-            spawnWaterParticles(handPos.x, handPos.y);
+          if (Math.hypot(worldPos.x - newPotX, worldPos.y - (newPotY - 40)) < 110) {
+            spawnWaterParticles(worldPos.x, worldPos.y);
             simState.layerGrowWaterLevel = Math.min(100, simState.layerGrowWaterLevel + 2.0);
             if (simState.layerGrowWaterLevel >= 100) { spawnSuccessSparkles(newPotX, newPotY - 40); currentStep = 10; updateStepUI(); }
           }
@@ -1331,11 +1424,11 @@
         const { x: topCutX, y: topCutY } = getBuddingTopCutPos();
 
         if (currentStep === 1 && selectedTool === 'knife' && isPinch) {
-          if (Math.hypot(handPos.x - trunkX, handPos.y - trunkY) < 80) { simState.tCutMade = true; currentStep = 2; updateStepUI(); }
+          if (Math.hypot(worldPos.x - trunkX, worldPos.y - trunkY) < 80) { simState.tCutMade = true; currentStep = 2; updateStepUI(); }
         }
         // Step 2: cut the bud off the donor tree's stem - a real, visible chip pops free
         else if (currentStep === 2 && selectedTool === 'knife' && isPinch) {
-          if (Math.hypot(handPos.x - budSrcX, handPos.y - budSrcY) < 70) {
+          if (Math.hypot(worldPos.x - budSrcX, worldPos.y - budSrcY) < 70) {
             simState.budEyeCut = true;
             simState.budEyePos = { x: budSrcX, y: budSrcY };
             currentStep = 3; updateStepUI(); spawnLeafParticles(budSrcX, budSrcY);
@@ -1344,11 +1437,11 @@
         // Step 3: grab the harvested bud chip and place it on the T-cut
         else if (currentStep === 3 && selectedTool === 'hand') {
           if (isPinch && !simState.budEyeInserted) {
-            if (Math.hypot(handPos.x - simState.budEyePos.x, handPos.y - simState.budEyePos.y) < 80 || simState.budEyeHeld) {
-              simState.budEyeHeld = true; simState.budEyePos = { x: handPos.x, y: handPos.y };
+            if (Math.hypot(worldPos.x - simState.budEyePos.x, worldPos.y - simState.budEyePos.y) < 80 || simState.budEyeHeld) {
+              simState.budEyeHeld = true; simState.budEyePos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.budEyeHeld) {
-            if (Math.hypot(handPos.x - trunkX, handPos.y - trunkY) < 90) {
+            if (Math.hypot(worldPos.x - trunkX, worldPos.y - trunkY) < 90) {
               simState.budEyeHeld = false; simState.budEyeInserted = true;
               simState.budEyePos = { x: trunkX, y: trunkY };
               currentStep = 4; updateStepUI();
@@ -1356,7 +1449,7 @@
           }
         }
         else if (currentStep === 4 && selectedTool === 'tape' && isPinch) {
-          if (Math.hypot(handPos.x - trunkX, handPos.y - trunkY) < 80 && simState.budEyeInserted) {
+          if (Math.hypot(worldPos.x - trunkX, worldPos.y - trunkY) < 80 && simState.budEyeInserted) {
             simState.budTapeWrapped = true; currentStep = 5; updateStepUI();
           }
         }
@@ -1366,8 +1459,8 @@
         // Step 6: once the graft has taken, water the new shoot so it grows bigger
         else if (currentStep === 6 && selectedTool === 'water' && isPinch) {
           const shootBaseX = trunkX; const shootBaseY = trunkY - 20;
-          if (Math.hypot(handPos.x - shootBaseX, handPos.y - shootBaseY) < 100) {
-            spawnWaterParticles(handPos.x, handPos.y);
+          if (Math.hypot(worldPos.x - shootBaseX, worldPos.y - shootBaseY) < 100) {
+            spawnWaterParticles(worldPos.x, worldPos.y);
             simState.shootWaterLevel = Math.min(100, simState.shootWaterLevel + 2.0);
             if (simState.shootWaterLevel >= 100) { spawnSuccessSparkles(shootBaseX, shootBaseY); currentStep = 7; updateStepUI(); }
           }
@@ -1375,7 +1468,7 @@
         // Step 7: cut off the rootstock's original top - now the last active
         // step, forcing all growth into the already-established new shoot
         else if (currentStep === 7 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - topCutX, handPos.y - topCutY) < 70) {
+          if (Math.hypot(worldPos.x - topCutX, worldPos.y - topCutY) < 70) {
             simState.rootstockToppedOff = true; currentStep = 8; updateStepUI(); spawnLeafParticles(topCutX, topCutY);
           }
         }
@@ -1389,9 +1482,9 @@
         // Step 1: pull the rootstock out of its pot
         if (currentStep === 1 && selectedTool === 'hand') {
           if (isPinch && !simState.inarchRootstockPulled) {
-            if (Math.hypot(handPos.x - potPos.x, handPos.y - (potPos.y - 100)) < 150 || simState.inarchRootstockHeld) {
+            if (Math.hypot(worldPos.x - potPos.x, worldPos.y - (potPos.y - 100)) < 150 || simState.inarchRootstockHeld) {
               simState.inarchRootstockHeld = true;
-              simState.inarchRootstockPos = { x: handPos.x, y: handPos.y };
+              simState.inarchRootstockPos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.inarchRootstockHeld) {
             simState.inarchRootstockHeld = false;
@@ -1402,7 +1495,7 @@
         // Step 2: cut the top of the stem off - target is up on the STEM,
         // above the base point
         else if (currentStep === 2 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y - 135)) < 90) {
+          if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - (simState.inarchRootstockPos.y - 135)) < 90) {
             simState.inarchTopCut = true; currentStep = 3; updateStepUI(); spawnLeafParticles(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y - 135);
           }
         }
@@ -1410,25 +1503,25 @@
         // below the base point (a different spot from step 2's target, so a
         // single held pinch can't blow through both steps at once)
         else if (currentStep === 3 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 45)) < 90) {
+          if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - (simState.inarchRootstockPos.y + 45)) < 90) {
             simState.inarchRootsTrimmed = true; currentStep = 4; updateStepUI();
           }
         }
         // Step 4: open a wound on the mother tree's curved branch, near its base
         else if (currentStep === 4 && selectedTool === 'knife' && isPinch) {
-          if (Math.hypot(handPos.x - union.x, handPos.y - union.y) < 70) {
+          if (Math.hypot(worldPos.x - union.x, worldPos.y - union.y) < 70) {
             simState.inarchBranchWounded = true; currentStep = 5; updateStepUI();
           }
         }
         // Step 5: carry the prepared rootstock over to approach the wound
         else if (currentStep === 5 && selectedTool === 'hand') {
           if (isPinch && !simState.inarchApproached) {
-            if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - simState.inarchRootstockPos.y) < 90 || simState.inarchRootstockHeld) {
+            if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - simState.inarchRootstockPos.y) < 90 || simState.inarchRootstockHeld) {
               simState.inarchRootstockHeld = true;
-              simState.inarchRootstockPos = { x: handPos.x, y: handPos.y };
+              simState.inarchRootstockPos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.inarchRootstockHeld) {
-            if (Math.hypot(handPos.x - union.x, handPos.y - union.y) < 100) {
+            if (Math.hypot(worldPos.x - union.x, worldPos.y - union.y) < 100) {
               simState.inarchRootstockHeld = false;
               simState.inarchApproached = true;
               simState.inarchRootstockPos = getInarchingUnionRestPos();
@@ -1438,26 +1531,26 @@
         }
         // Step 6: tape the union together
         else if (currentStep === 6 && selectedTool === 'tape' && isPinch) {
-          if (Math.hypot(handPos.x - union.x, handPos.y - union.y) < 90) {
+          if (Math.hypot(worldPos.x - union.x, worldPos.y - union.y) < 90) {
             simState.inarchTapeBound = true; currentStep = 7; updateStepUI();
           }
         }
         // Step 7: wrap a coconut-husk ball around the dangling taproot
         else if (currentStep === 7 && selectedTool === 'coconut' && isPinch) {
-          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 44)) < 100) {
+          if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - (simState.inarchRootstockPos.y + 44)) < 100) {
             simState.inarchTapRootWrapped = true; currentStep = 8; updateStepUI();
           }
         }
         // Step 8: water the husk ball to keep it moist
         else if (currentStep === 8 && selectedTool === 'water' && isPinch) {
-          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 44)) < 100) {
-            spawnWaterParticles(handPos.x, handPos.y);
+          if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - (simState.inarchRootstockPos.y + 44)) < 100) {
+            spawnWaterParticles(worldPos.x, worldPos.y);
             simState.inarchTapRootWatered = true; currentStep = 9; updateStepUI();
           }
         }
         // Step 9: tape the husk ball so it doesn't fall off
         else if (currentStep === 9 && selectedTool === 'tape' && isPinch) {
-          if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - (simState.inarchRootstockPos.y + 44)) < 100 && simState.inarchTapRootWrapped) {
+          if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - (simState.inarchRootstockPos.y + 44)) < 100 && simState.inarchTapRootWrapped) {
             simState.inarchTapRootTaped = true; currentStep = 10; updateStepUI();
           }
         }
@@ -1470,7 +1563,7 @@
         // together with the rootstock
         else if (currentStep === 11 && selectedTool === 'scissors' && isPinch) {
           const cutPos = getInarchingCutPos();
-          if (Math.hypot(handPos.x - cutPos.x, handPos.y - cutPos.y) < 90) {
+          if (Math.hypot(worldPos.x - cutPos.x, worldPos.y - cutPos.y) < 90) {
             simState.inarchHarvested = true;
             simState.inarchRootstockPos = getInarchingUnionRestPos();
             currentStep = 12; updateStepUI(); spawnLeafParticles(cutPos.x, cutPos.y);
@@ -1479,12 +1572,12 @@
         // Step 12: carry the harvested plant over and plant it in a new pot
         else if (currentStep === 12 && selectedTool === 'hand') {
           if (isPinch && !simState.inarchPlantedInPot) {
-            if (Math.hypot(handPos.x - simState.inarchRootstockPos.x, handPos.y - simState.inarchRootstockPos.y) < 100 || simState.inarchRootstockHeld) {
+            if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - simState.inarchRootstockPos.y) < 100 || simState.inarchRootstockHeld) {
               simState.inarchRootstockHeld = true;
-              simState.inarchRootstockPos = { x: handPos.x, y: handPos.y };
+              simState.inarchRootstockPos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.inarchRootstockHeld) {
-            if (Math.hypot(handPos.x - potPos.x, handPos.y - potPos.y) < 130) {
+            if (Math.hypot(worldPos.x - potPos.x, worldPos.y - potPos.y) < 130) {
               simState.inarchRootstockHeld = false;
               simState.inarchPlantedInPot = true;
               currentStep = 13; updateStepUI();
@@ -1493,8 +1586,8 @@
         }
         // Step 13: water the newly planted tree so it grows
         else if (currentStep === 13 && selectedTool === 'water' && isPinch) {
-          if (Math.hypot(handPos.x - potPos.x, handPos.y - (potPos.y - 60)) < 110) {
-            spawnWaterParticles(handPos.x, handPos.y);
+          if (Math.hypot(worldPos.x - potPos.x, worldPos.y - (potPos.y - 60)) < 110) {
+            spawnWaterParticles(worldPos.x, worldPos.y);
             simState.inarchGrowWaterLevel = Math.min(100, simState.inarchGrowWaterLevel + 2.0);
             if (simState.inarchGrowWaterLevel >= 100) { spawnSuccessSparkles(potPos.x, potPos.y - 60); currentStep = 14; updateStepUI(); }
           }
@@ -1509,26 +1602,26 @@
         const basePos = getGraftingDonorBasePos();
 
         if (currentStep === 1 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - topX, handPos.y - topY) < 70) { simState.rootstockTopCut = true; currentStep = 2; updateStepUI(); spawnLeafParticles(topX, topY); }
+          if (Math.hypot(worldPos.x - topX, worldPos.y - topY) < 70) { simState.rootstockTopCut = true; currentStep = 2; updateStepUI(); spawnLeafParticles(topX, topY); }
         }
         else if (currentStep === 2 && selectedTool === 'knife' && isPinch) {
-          if (Math.hypot(handPos.x - topX, handPos.y - topY) < 70 && simState.rootstockTopCut) { simState.stemSplit = true; currentStep = 3; updateStepUI(); }
+          if (Math.hypot(worldPos.x - topX, worldPos.y - topY) < 70 && simState.rootstockTopCut) { simState.stemSplit = true; currentStep = 3; updateStepUI(); }
         }
         // Step 3: prune off the donor tree's right branch
         else if (currentStep === 3 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - rBranch.x, handPos.y - rBranch.y) < 70) {
+          if (Math.hypot(worldPos.x - rBranch.x, worldPos.y - rBranch.y) < 70) {
             simState.scionRightBranchCut = true; currentStep = 4; updateStepUI(); spawnLeafParticles(rBranch.x, rBranch.y);
           }
         }
         // Step 4: prune off the donor tree's left branch
         else if (currentStep === 4 && selectedTool === 'scissors' && isPinch) {
-          if (Math.hypot(handPos.x - lBranch.x, handPos.y - lBranch.y) < 70) {
+          if (Math.hypot(worldPos.x - lBranch.x, worldPos.y - lBranch.y) < 70) {
             simState.scionLeftBranchCut = true; currentStep = 5; updateStepUI(); spawnLeafParticles(lBranch.x, lBranch.y);
           }
         }
         // Step 5: shape the trunk's base into a V wedge, ready for insertion
         else if (currentStep === 5 && selectedTool === 'knife' && isPinch) {
-          if (Math.hypot(handPos.x - basePos.x, handPos.y - basePos.y) < 70) {
+          if (Math.hypot(worldPos.x - basePos.x, worldPos.y - basePos.y) < 70) {
             simState.scionWedged = true;
             simState.scionPos = { x: donorPos.x, y: donorPos.y };
             currentStep = 6; updateStepUI();
@@ -1538,11 +1631,11 @@
         // insert it into the rootstock's cleft, at its own full size
         else if (currentStep === 6 && selectedTool === 'hand') {
           if (isPinch && !simState.scionInserted) {
-            if (Math.hypot(handPos.x - simState.scionPos.x, handPos.y - simState.scionPos.y) < 90 || simState.scionHeld) {
-              simState.scionHeld = true; simState.scionPos = { x: handPos.x, y: handPos.y };
+            if (Math.hypot(worldPos.x - simState.scionPos.x, worldPos.y - simState.scionPos.y) < 90 || simState.scionHeld) {
+              simState.scionHeld = true; simState.scionPos = { x: worldPos.x, y: worldPos.y };
             }
           } else if (!isPinch && simState.scionHeld) {
-            if (Math.hypot(handPos.x - topX, handPos.y - topY) < 100) {
+            if (Math.hypot(worldPos.x - topX, worldPos.y - topY) < 100) {
               simState.scionHeld = false; simState.scionInserted = true;
               simState.scionPos = { x: topX, y: topY + 45 }; // pushed down so the wedge covers the split crack
               currentStep = 7; updateStepUI();
@@ -1550,7 +1643,7 @@
           }
         }
         else if (currentStep === 7 && selectedTool === 'tape' && isPinch) {
-          if (Math.hypot(handPos.x - topX, handPos.y - topY) < 80 && simState.scionInserted) {
+          if (Math.hypot(worldPos.x - topX, worldPos.y - topY) < 80 && simState.scionInserted) {
             simState.graftTapeBound = true; spawnSuccessSparkles(topX, topY); currentStep = 8; updateStepUI();
           }
         }
@@ -1563,24 +1656,24 @@
     // so every place that needs them (interactions, rendering, the wait-panel
     // callback) stays in sync automatically.
     function getLayeringBranchPos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.5 + 75, y: groundY - 287.5 };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.5 + 75, y: groundY - 287.5 };
     }
     function getLayeringNewPotPos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.85, y: groundY - 20 };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.85, y: groundY - 20 };
     }
 
     // Centralized coordinates for the budding mode: the rootstock's T-cut
     // union, the bud's source point on the donor tree's STEM (not a branch
     // tip), and the topping-cut point above the union.
     function getBuddingTrunkPos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.45, y: groundY - 200 };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.45, y: groundY - 200 };
     }
     function getBuddingBudSourcePos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.75, y: groundY - 150 };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.75, y: groundY - 150 };
     }
     function getBuddingTopCutPos() {
       const trunk = getBuddingTrunkPos();
@@ -1592,12 +1685,12 @@
     // right) rather than a curve. The graft union sits partway along it,
     // closer to the trunk than the leafy tip - see getInarchingUnionPos().
     function getInarchingPotPos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.75, y: groundY };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.75, y: groundY };
     }
     function getInarchingBranchOrigin() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.35 + 85, y: groundY - 225 }; // at the right edge of the widened trunk
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.35 + 85, y: groundY - 225 }; // at the right edge of the widened trunk
     }
     function getInarchingBranchTip() {
       const origin = getInarchingBranchOrigin();
@@ -2264,12 +2357,12 @@
     // point, the donor tree (no pot - already prepared, standing free), and
     // the point on its branch where the scion twig gets harvested from.
     function getGraftingRootstockTopPos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.45, y: groundY - 275 };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.45, y: groundY - 275 };
     }
     function getGraftingDonorPos() {
-      const groundY = canvas.height * 0.85;
-      return { x: canvas.width * 0.75, y: groundY };
+      const groundY = WORLD_H * 0.85;
+      return { x: WORLD_W * 0.75, y: groundY };
     }
     function getGraftingDonorRightBranchPos() {
       const donor = getGraftingDonorPos();
@@ -2309,7 +2402,7 @@
         // plantedInGround: reach all the way down to the actual bottom edge
         // of the canvas (dynamic, so it works at any screen size) instead of
         // a fixed offset
-        const groundExtra = config.plantedInGround ? Math.max(0, (canvas.height - y) / scale) : 0;
+        const groundExtra = config.plantedInGround ? Math.max(0, (WORLD_H - y) / scale) : 0;
         ctx.fillRect(-22 * trunkWidthScale, -320, 44 * trunkWidthScale, 320 + groundExtra);
         if (!config.hideBranch) {
           if (config.branchCut) ctx.fillRect(10, -240, 45, 20); else ctx.fillRect(10, -240, 150, 20);
@@ -2339,17 +2432,17 @@
 
     function renderModeScene(groundY) {
       if (currentMode === 'cutting') {
-        drawStylizedTree(canvas.width * 0.3, groundY, 1.25, { showLeaves: true, branchCut: simState.branchCut });
+        drawStylizedTree(WORLD_W * 0.3, groundY, 1.25, { showLeaves: true, branchCut: simState.branchCut });
         // The destination pot should never show a full tree shape - only ever
         // an empty pot, with the planted cutting itself drawn separately below.
-        drawStylizedTree(canvas.width * 0.7, groundY, 1.25, { showTree: false });
+        drawStylizedTree(WORLD_W * 0.7, groundY, 1.25, { showTree: false });
         
         if (simState.branchCut && !simState.plantedBranchInPot) {
           drawCutBranchItem(simState.cutBranchPos.x, simState.cutBranchPos.y, 1.2, simState.leavesTrimmed);
         }
         
         if (simState.plantedBranchInPot) {
-          const potX = canvas.width * 0.7; const potY = groundY - 15;
+          const potX = WORLD_W * 0.7; const potY = groundY - 15;
           drawCutBranchItem(potX, potY, 1.2, simState.leavesTrimmed);
           if (simState.wateredLevel > 0) {
             let rootCount = 2;
@@ -2362,17 +2455,17 @@
           }
         }
 
-        if (currentStep === 1) drawPulseTarget(canvas.width * 0.3 + 125, groundY - 300, "ตัดกิ่ง");
-        else if (currentStep === 2) !simState.cutBranchHeld ? drawPulseTarget(simState.cutBranchPos.x, simState.cutBranchPos.y, "จับกิ่ง") : drawPulseTarget(canvas.width * 0.7, groundY - 20, "ปักลงกระถาง");
-        else if (currentStep === 3) drawPulseTarget(canvas.width * 0.7, groundY - 15, "เล็มใบ");
-        else if (currentStep === 4) drawPulseTarget(canvas.width * 0.7, groundY - 50, "รดน้ำ");
+        if (currentStep === 1) drawPulseTarget(WORLD_W * 0.3 + 125, groundY - 300, "ตัดกิ่ง");
+        else if (currentStep === 2) !simState.cutBranchHeld ? drawPulseTarget(simState.cutBranchPos.x, simState.cutBranchPos.y, "จับกิ่ง") : drawPulseTarget(WORLD_W * 0.7, groundY - 20, "ปักลงกระถาง");
+        else if (currentStep === 3) drawPulseTarget(WORLD_W * 0.7, groundY - 15, "เล็มใบ");
+        else if (currentStep === 4) drawPulseTarget(WORLD_W * 0.7, groundY - 50, "รดน้ำ");
 
       } else if (currentMode === 'layering') {
         // branchCut here reuses the tree's existing "shorten the right branch" visual
         // once the layered piece has actually been cut away from the mother tree
-        drawStylizedTree(canvas.width * 0.5, groundY, 1.25, { showLeaves: true, branchCut: simState.layerHarvested });
+        drawStylizedTree(WORLD_W * 0.5, groundY, 1.25, { showLeaves: true, branchCut: simState.layerHarvested });
         // Empty pot waiting for the harvested, already-rooted cutting
-        drawStylizedTree(canvas.width * 0.85, groundY, 1.0, { showTree: false });
+        drawStylizedTree(WORLD_W * 0.85, groundY, 1.0, { showTree: false });
 
         const { x: branchX, y: branchY } = getLayeringBranchPos();
         const { x: newPotX, y: newPotY } = getLayeringNewPotPos();
@@ -2429,8 +2522,8 @@
       } else if (currentMode === 'budding') {
         // Once topped, the rootstock's own canopy is cut away (reusing the
         // same cutTop stump visual as the cutting-mode's harvested branch)
-        drawStylizedTree(canvas.width * 0.45, groundY, 1.25, { showLeaves: true, cutTop: simState.rootstockToppedOff });
-        drawStylizedTree(canvas.width * 0.75, groundY, 1.0, { showLeaves: true });
+        drawStylizedTree(WORLD_W * 0.45, groundY, 1.25, { showLeaves: true, cutTop: simState.rootstockToppedOff });
+        drawStylizedTree(WORLD_W * 0.75, groundY, 1.0, { showLeaves: true });
 
         const { x: trunkX, y: trunkY } = getBuddingTrunkPos();
         const { x: budSrcX, y: budSrcY } = getBuddingBudSourcePos();
@@ -2505,7 +2598,7 @@
         // leaves - the leafy portion beyond the cut came away with the graft.
         // The trunk-side end keeps its natural round cap; only the cut end
         // gets a flat cross-section cap overlaid on top.
-        drawStylizedTree(canvas.width * 0.35, groundY, 2.0, { showLeaves: true, branchCut: true, hideBranch: true, showPot: false, plantedInGround: true, trunkWidthScale: 2, leftBranchLength: 125 });
+        drawStylizedTree(WORLD_W * 0.35, groundY, 2.0, { showLeaves: true, branchCut: true, hideBranch: true, showPot: false, plantedInGround: true, trunkWidthScale: 2, leftBranchLength: 125 });
         if (!simState.inarchHarvested) {
           drawDiagonalBranch(origin, tip, true);
         } else {
@@ -2640,7 +2733,7 @@
         const lBranch = getGraftingDonorLeftBranchPos();
         const basePos = getGraftingDonorBasePos();
 
-        drawStylizedTree(canvas.width * 0.45, groundY, 1.25, { cutTop: simState.rootstockTopCut, stemSplit: simState.stemSplit });
+        drawStylizedTree(WORLD_W * 0.45, groundY, 1.25, { cutTop: simState.rootstockTopCut, stemSplit: simState.stemSplit });
 
         // The donor tree: already prepared, standing free without a pot.
         // Shown at its resting spot until picked up in step 6; once carried
@@ -2676,7 +2769,7 @@
       // Hide cursor if we are not actively tracking mouse/hand to keep AR clean
       if (!handPos.detected && !handPos.isPinching && useARCamera) return; 
 
-      ctx.save(); ctx.translate(handPos.x, handPos.y);
+      ctx.save(); ctx.translate(worldPos.x, worldPos.y);
       ctx.font = "40px Kanit";
       let icon = "🖐️";
       if (selectedTool === 'scissors') icon = "✂️"; else if (selectedTool === 'knife') icon = "🔪";
@@ -2723,26 +2816,30 @@
       }
 
       // 2. Draw Simulated Environment Layer
-      const groundY = canvas.height * 0.85;
-      
-      // Background in two sections: transparent white (sky area, with cloud
-      // shapes floating in it instead of a flat blue fill), then the
-      // existing green ground plane (bottom)
+      const groundY = WORLD_H * 0.85;
+
+      // Background is drawn in SCREEN space so it always fills the display
+      // edge to edge, but its horizon is placed exactly where the world's
+      // ground line lands after scaling - so the trees still stand on it.
+      const groundScreenY = worldToScreenY(groundY);
       ctx.fillStyle = useARCamera ? 'rgba(255, 255, 255, 0.2)' : '#f1f5f9';
-      ctx.fillRect(0, 0, canvas.width, groundY);
+      ctx.fillRect(0, 0, canvas.width, Math.max(0, groundScreenY));
 
-      // A few fluffy clouds sitting in the upper sky area
       const cloudAlpha = useARCamera ? 0.55 : 0.9;
-      drawCloud(canvas.width * 0.15, canvas.height * 0.10, 1.1, cloudAlpha);
-      drawCloud(canvas.width * 0.55, canvas.height * 0.16, 0.8, cloudAlpha);
-      drawCloud(canvas.width * 0.85, canvas.height * 0.08, 0.95, cloudAlpha);
+      const cloudScale = Math.max(0.5, view.scale);
+      drawCloud(canvas.width * 0.15, groundScreenY * 0.16, 1.1 * cloudScale, cloudAlpha);
+      drawCloud(canvas.width * 0.55, groundScreenY * 0.26, 0.8 * cloudScale, cloudAlpha);
+      drawCloud(canvas.width * 0.85, groundScreenY * 0.12, 0.95 * cloudScale, cloudAlpha);
 
-      // Ground plane
       ctx.fillStyle = 'rgba(20, 83, 45, 0.8)';
-      ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(canvas.width, groundY);
-      ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(0, canvas.height); ctx.fill();
+      ctx.fillRect(0, Math.max(0, groundScreenY), canvas.width, canvas.height - groundScreenY);
 
-      // 3. Process Logic & Render
+      // 3. Everything below is authored in world coordinates - scale the
+      // whole stage to fit the screen, then draw as if on a 1280x760 canvas
+      ctx.save();
+      ctx.setTransform(view.scale, 0, 0, view.scale, view.offsetX, view.offsetY);
+
+      updateWorldPos();
       renderModeScene(groundY);
       processStepInteractions();
 
@@ -2758,9 +2855,12 @@
         if (p.life <= 0) leafParticles.splice(i, 1);
       }
 
-      // 5. Render Virtual Tool Cursor
+      // 5. Render Virtual Tool Cursor (still in world space, so it lines up
+      //    with the targets it is pointing at)
       renderHandToolCursor();
-      
+
+      ctx.restore();
+
       requestAnimationFrame(renderFrame);
     }
 
