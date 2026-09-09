@@ -393,6 +393,29 @@
       .hand-status-stack { display: none; }
     }
 
+    /* Stage pan controls - edge arrows for shifting the view sideways */
+    .pan-controls {
+      position: absolute; z-index: 22;
+      left: 0; right: 0; top: 50%; transform: translateY(-50%);
+      display: flex; justify-content: space-between;
+      padding: 0 .4rem; pointer-events: none;
+    }
+    .pan-controls.hidden { display: none; }
+    .pan-btn {
+      pointer-events: auto; cursor: pointer;
+      width: 2.4rem; height: 3.4rem; border-radius: .8rem;
+      border: 1px solid rgba(255,255,255,.28);
+      background: rgba(8, 20, 10, .5); color: #EAF4DC;
+      font-size: 1.6rem; line-height: 1; font-family: inherit;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    }
+    .pan-btn:active { background: rgba(8, 20, 10, .72); }
+    @media (min-width: 1024px) {
+      /* keep clear of the left-hand tool dock on wide screens */
+      .pan-controls { padding: 0 .4rem 0 19rem; }
+    }
+
     /* Live dwell-hover feedback while a fingertip/cursor rests over a tool card */
     .tool-card.hover-live {
       border-color: rgba(74, 222, 128, 0.7) !important;
@@ -412,10 +435,10 @@
        Sits on top of everything (z-[100]) until a mode is entered.
        Visual language: vintage seed packets & nursery bench.
        ============================================================ -->
-  <div id="appShell" class="fixed inset-0 z-[100] shell-bg flex items-center justify-center p-4 overflow-y-auto">
+  <div id="appShell" class="fixed inset-0 z-[100] shell-bg flex justify-center p-4 overflow-y-auto overscroll-contain">
 
     <!-- Loading: a seed sprouting, one orchestrated moment -->
-    <div id="screenLoading" class="flex flex-col items-center">
+    <div id="screenLoading" class="m-auto flex flex-col items-center">
       <svg viewBox="0 0 120 120" class="w-32 h-32" aria-hidden="true">
         <ellipse cx="60" cy="104" rx="34" ry="5" fill="#000" opacity="0.14"/>
         <path d="M60 104 V58" stroke="#4E7A3A" stroke-width="5" stroke-linecap="round" class="sprout-stem"/>
@@ -427,7 +450,7 @@
     </div>
 
     <!-- Login -->
-    <div id="screenLogin" class="hidden w-full max-w-[26rem]">
+    <div id="screenLogin" class="hidden m-auto w-full max-w-[26rem]">
       <div class="packet">
         <div class="packet-head">
           <svg viewBox="0 0 96 96" class="login-mark" aria-hidden="true">
@@ -469,7 +492,7 @@
     </div>
 
     <!-- Leaderboard -->
-    <div id="screenLeaderboard" class="hidden w-full max-w-[30rem]">
+    <div id="screenLeaderboard" class="hidden m-auto w-full max-w-[30rem]">
       <div class="packet">
         <div class="packet-head">
           <p class="packet-kicker">ผลการฝึก</p>
@@ -486,7 +509,7 @@
     </div>
 
     <!-- Mode select -->
-    <div id="screenModeSelect" class="hidden w-full max-w-3xl py-6">
+    <div id="screenModeSelect" class="hidden m-auto w-full max-w-3xl py-6">
       <div class="bench-head">
         <div>
           <p class="packet-kicker">ยินดีต้อนรับ</p>
@@ -595,6 +618,12 @@
     <span class="rotate-hint-icon">📱</span> หมุนจอเป็นแนวนอน จะเล่นได้เต็มจอกว่า
   </div>
 
+  <!-- Stage pan controls: shown only when the stage is wider than the screen -->
+  <div id="panControls" class="pan-controls hidden">
+    <button class="pan-btn" onclick="panStage(140)" aria-label="เลื่อนไปทางซ้าย">‹</button>
+    <button class="pan-btn" onclick="panStage(-140)" aria-label="เลื่อนไปทางขวา">›</button>
+  </div>
+
   <!-- Main AR Canvas Viewport -->
   <canvas id="arCanvas" class="absolute inset-0 z-0"></canvas>
   <video id="webcamVideo" playsinline></video>
@@ -680,7 +709,7 @@
         <div class="min-w-0">
           <div id="modeTitleText" class="text-xs font-bold text-emerald-400 tracking-wider">โหมดการปักชำ (CUTTING)</div>
           <div id="stepInstructionText" class="text-sm sm:text-base font-semibold text-white">
-            เลือก [กรรไกร ✂️] แล้วจีบนิ้วตัดกิ่งพันธุ์ดียาวบนต้นแม่ (ด้านซ้าย)
+            เลือก [กรรไกร ✂️] แล้วตัดกิ่งพันธุ์ดียาวบนต้นแม่ (ด้านซ้าย)
           </div>
         </div>
       </div>
@@ -780,13 +809,54 @@
     const WORLD_H = 760;
     const WORLD_GROUND_Y = WORLD_H * 0.85;
     let view = { scale: 1, offsetX: 0, offsetY: 0 };
+    let stagePanX = 0; // horizontal pan, in screen pixels
+
+    function isCompactScreen() {
+      return window.innerWidth < 1024 || window.innerHeight < 620;
+    }
 
     function updateViewTransform() {
-      const s = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H);
-      view.scale = s;
-      view.offsetX = (canvas.width - WORLD_W * s) / 2;
-      view.offsetY = (canvas.height - WORLD_H * s) / 2;
+      const fit = Math.min(canvas.width / WORLD_W, canvas.height / WORLD_H);
+
+      // On phones the "fit whole stage" scale leaves everything tiny, so zoom
+      // in - but never so far that the stage becomes much taller than the
+      // screen, which would push the ground and the trees out of view.
+      let zoom = 1;
+      if (isCompactScreen()) {
+        const maxZoomByHeight = (canvas.height * 1.15) / (WORLD_H * fit);
+        zoom = Math.max(1, Math.min(2, maxZoomByHeight));
+      }
+      view.scale = fit * zoom;
+
+      const stageW = WORLD_W * view.scale;
+      const stageH = WORLD_H * view.scale;
+
+      // Horizontal: centre, then apply pan, clamped to the stage edges
+      const baseX = (canvas.width - stageW) / 2;
+      const slackX = Math.max(0, (stageW - canvas.width) / 2);
+      stagePanX = Math.max(-slackX, Math.min(slackX, stagePanX));
+      view.offsetX = baseX + stagePanX;
+
+      // Vertical: centre when it fits, otherwise anchor the ground line near
+      // the bottom so the part being worked on is always on screen
+      view.offsetY = (stageH <= canvas.height)
+        ? (canvas.height - stageH) / 2
+        : canvas.height * 0.88 - WORLD_GROUND_Y * view.scale;
     }
+
+    function panStage(dxScreen) {
+      stagePanX += dxScreen;
+      updateViewTransform();
+      updatePanButtons();
+    }
+
+    function updatePanButtons() {
+      const wrap = document.getElementById('panControls');
+      if (!wrap) return;
+      const stageW = WORLD_W * view.scale;
+      wrap.classList.toggle('hidden', stageW <= canvas.width + 4);
+    }
+
     function screenToWorldX(x) { return (x - view.offsetX) / view.scale; }
     function screenToWorldY(y) { return (y - view.offsetY) / view.scale; }
     function worldToScreenY(y) { return y * view.scale + view.offsetY; }
@@ -796,6 +866,7 @@
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
       updateViewTransform();
+      updatePanButtons();
     }
     window.addEventListener('resize', resizeCanvas);
     window.addEventListener('orientationchange', resizeCanvas);
@@ -838,7 +909,24 @@
     // as the "pinch" - the same gesture the whole game already understands,
     // so every existing interaction (grab, drag, release) works via touch
     // with no changes to any game logic.
+    // Is a menu/overlay screen currently covering the game?
+    function isShellOpen() {
+      const shell = document.getElementById('appShell');
+      return shell && !shell.classList.contains('hidden');
+    }
+
+    let panPointerId = null;
+    let panLastX = 0;
+
     window.addEventListener('touchstart', (e) => {
+      if (isShellOpen()) return; // menus handle their own touches
+      if (e.touches.length >= 2) {
+        // Two fingers = pan the stage, not a game action
+        handPos.isPinching = false;
+        panPointerId = 'multi';
+        panLastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        return;
+      }
       if (!handPos.detected) {
         const t = e.touches[0];
         if (t) {
@@ -848,7 +936,18 @@
         }
       }
     }, { passive: true });
+
     window.addEventListener('touchmove', (e) => {
+      // Let the login / menu / leaderboard screens scroll normally
+      if (isShellOpen()) return;
+
+      if (panPointerId === 'multi' && e.touches.length >= 2) {
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        panStage(midX - panLastX);
+        panLastX = midX;
+        e.preventDefault();
+        return;
+      }
       if (!handPos.detected) {
         const t = e.touches[0];
         if (t) {
@@ -856,9 +955,12 @@
           handPos.lastUpdate = performance.now();
         }
       }
-      e.preventDefault(); // stop the page from scrolling while dragging
+      e.preventDefault(); // stop the page from scrolling while dragging in-game
     }, { passive: false });
+
     window.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) panPointerId = null;
+      if (isShellOpen()) return;
       if (!handPos.detected) handPos.isPinching = false;
     }, { passive: true });
 
@@ -1239,58 +1341,58 @@
 
       if (currentMode === 'cutting') {
         title.innerText = "1. การปักชำ (CUTTING)";
-        if (currentStep === 1) desc.innerText = "เลือก [กรรไกร ✂️] แล้วจีบนิ้วตัดกิ่งพันธุ์ดียาวบนต้นแม่ (ด้านซ้าย)";
-        else if (currentStep === 2) desc.innerText = "เลือก [มือจับ 🖐️] แล้วจีบนิ้วลากกิ่ง (ใบยังเต็มขนาด) ไปปักลงในกระถางดินเปล่า (ด้านขวา)";
-        else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] จีบนิ้วเล็มใบของกิ่งที่ปักไว้ให้เล็กลง เพื่อลดการคายน้ำ";
-        else if (currentStep === 4) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำกิ่งปักชำจนรากเริ่มงอก";
+        if (currentStep === 1) desc.innerText = "เลือก [กรรไกร ✂️] แล้วตัดกิ่งพันธุ์ดียาวบนต้นแม่ (ด้านซ้าย)";
+        else if (currentStep === 2) desc.innerText = "เลือก [มือจับ 🖐️] แล้วลากกิ่ง (ใบยังเต็มขนาด) ไปปักลงในกระถางดินเปล่า (ด้านขวา)";
+        else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] เล็มใบของกิ่งที่ปักไว้ให้เล็กลง เพื่อลดการคายน้ำ";
+        else if (currentStep === 4) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำกิ่งปักชำจนรากเริ่มงอก";
         else if (currentStep === 5) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
       } else if (currentMode === 'layering') {
         title.innerText = "2. การตอนกิ่ง (AIR LAYERING)";
-        if (currentStep === 1) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วที่กิ่งขวา (กิ่งยาว) เพื่อควั่นเปลือกไม้ออกเป็นวงรอบกิ่ง";
-        else if (currentStep === 2) desc.innerText = "ใช้ [มีด 🔪] จีบนิ้วค้างไว้ แล้วขยับขึ้น-ลงซ้ำๆ ที่รอยควั่น เพื่อขูดเยื่อเจริญ (cambium) ออกให้หมดตามเกจ";
-        else if (currentStep === 3) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] นำไปจีบนิ้วหุ้มรอบบริเวณที่ขูดแล้ว";
-        else if (currentStep === 4) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำตุ้มขุยมะพร้าวให้ชื้น ก่อนห่อหุ้ม";
-        else if (currentStep === 5) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันรอบตุ้มตอนให้แน่น (เทปใสมองเห็นตุ้มด้านในได้) กันความชื้นระเหยออก";
+        if (currentStep === 1) desc.innerText = "เลือก [มีด 🔪] ที่กิ่งขวา (กิ่งยาว) เพื่อควั่นเปลือกไม้ออกเป็นวงรอบกิ่ง";
+        else if (currentStep === 2) desc.innerText = "ใช้ [มีด 🔪] ค้างไว้ แล้วขยับขึ้น-ลงซ้ำๆ ที่รอยควั่น เพื่อขูดเยื่อเจริญ (cambium) ออกให้หมดตามเกจ";
+        else if (currentStep === 3) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] นำไปหุ้มรอบบริเวณที่ขูดแล้ว";
+        else if (currentStep === 4) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำตุ้มขุยมะพร้าวให้ชื้น ก่อนห่อหุ้ม";
+        else if (currentStep === 5) desc.innerText = "เลือก [เทปพลาสติก 🩹] พันรอบตุ้มตอนให้แน่น (เทปใสมองเห็นตุ้มด้านในได้) กันความชื้นระเหยออก";
         else if (currentStep === 6) desc.innerText = "พันเทปเรียบร้อย ต้องรอให้กิ่งออกราก — ชี้นิ้วค้างไว้ที่วงกลมทางขวา จนหลอดครบรอบ";
-        else if (currentStep === 7) desc.innerText = "รากงอกในตุ้มดีแล้ว! เลือก [กรรไกร ✂️] จีบนิ้วตัดกิ่งตอน (พร้อมตุ้ม) ออกจากต้นแม่";
-        else if (currentStep === 8) desc.innerText = "เลือก [มือจับ 🖐️] แล้วจีบนิ้วลากกิ่งตอนทั้งตุ้ม ไปปักลงกระถางใหม่ (ด้านขวา)";
-        else if (currentStep === 9) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำต้นที่ปักใหม่ ให้เจริญเติบโตสูงขึ้น";
+        else if (currentStep === 7) desc.innerText = "รากงอกในตุ้มดีแล้ว! เลือก [กรรไกร ✂️] ตัดกิ่งตอน (พร้อมตุ้ม) ออกจากต้นแม่";
+        else if (currentStep === 8) desc.innerText = "เลือก [มือจับ 🖐️] แล้วลากกิ่งตอนทั้งตุ้ม ไปปักลงกระถางใหม่ (ด้านขวา)";
+        else if (currentStep === 9) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำต้นที่ปักใหม่ ให้เจริญเติบโตสูงขึ้น";
         else if (currentStep === 10) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
       } else if (currentMode === 'budding') {
         title.innerText = "3. การติดตา (BUDDING)";
-        if (currentStep === 1) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วกรีดแผลรูปตัว T บนลำต้นตอ (ซ้าย)";
-        else if (currentStep === 2) desc.innerText = "ใช้ [มีด 🔪] จีบนิ้วที่ตาบนลำต้นของกิ่งพันธุ์ดี (ขวา) เพื่อเฉือนตาออกมา";
-        else if (currentStep === 3) desc.innerText = "เลือก [มือจับ 🖐️] จีบนิ้วหยิบตาที่เฉือนออกมา ไปวางลงบนแผลรูปตัว T";
-        else if (currentStep === 4) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันแผลให้แน่น ปิดทับตาลงไปให้สนิทกับเนื้อไม้";
+        if (currentStep === 1) desc.innerText = "เลือก [มีด 🔪] กรีดแผลรูปตัว T บนลำต้นตอ (ซ้าย)";
+        else if (currentStep === 2) desc.innerText = "ใช้ [มีด 🔪] ที่ตาบนลำต้นของกิ่งพันธุ์ดี (ขวา) เพื่อเฉือนตาออกมา";
+        else if (currentStep === 3) desc.innerText = "เลือก [มือจับ 🖐️] หยิบตาที่เฉือนออกมา ไปวางลงบนแผลรูปตัว T";
+        else if (currentStep === 4) desc.innerText = "เลือก [เทปพลาสติก 🩹] พันแผลให้แน่น ปิดทับตาลงไปให้สนิทกับเนื้อไม้";
         else if (currentStep === 5) desc.innerText = "พันเทปเรียบร้อย ต้องรอดูว่าตาจะติดไหม — ชี้นิ้วค้างไว้ที่วงกลมทางขวา จนหลอดครบรอบ";
-        else if (currentStep === 6) desc.innerText = "ตาติดสำเร็จ มีกิ่งใหม่แตกออกมาแล้ว! เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำกิ่งใหม่ที่แตกออกมา ให้เจริญเติบโตขึ้น";
-        else if (currentStep === 7) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดยอดต้นตอทิ้งเหนือรอยตาที่ติด เพื่อบังคับให้ตาใหม่เติบโตแทน";
+        else if (currentStep === 6) desc.innerText = "ตาติดสำเร็จ มีกิ่งใหม่แตกออกมาแล้ว! เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำกิ่งใหม่ที่แตกออกมา ให้เจริญเติบโตขึ้น";
+        else if (currentStep === 7) desc.innerText = "เลือก [กรรไกร ✂️] ตัดยอดต้นตอทิ้งเหนือรอยตาที่ติด เพื่อบังคับให้ตาใหม่เติบโตแทน";
         else if (currentStep === 8) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
       } else if (currentMode === 'inarching') {
         title.innerText = "4. การทาบกิ่ง (INARCHING)";
-        if (currentStep === 1) desc.innerText = "เลือก [มือจับ 🖐️] จีบนิ้วยกต้นตอ (ขวา) ออกจากกระถาง";
-        else if (currentStep === 2) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดยอดลำต้นต้นตอทิ้ง (เหนือรากขึ้นไปประมาณ 20 ซม.) - จุดบนลำต้น";
-        else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] จีบนิ้วตัดรากแขนงออก ให้เหลือแต่รากแก้วเส้นเดียว - จุดที่ราก";
-        else if (currentStep === 4) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วเปิดแผลที่ปลายกิ่งโค้งของต้นแม่ (ซ้าย)";
-        else if (currentStep === 5) desc.innerText = "เลือก [มือจับ 🖐️] จีบนิ้วนำต้นตอที่เตรียมไว้ ไปทาบกับแผลบนกิ่งของต้นแม่";
-        else if (currentStep === 6) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันรอยทาบให้แน่น";
-        else if (currentStep === 7) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] จีบนิ้วนำมาใส่ตรงรากแก้วที่ห้อยอยู่";
-        else if (currentStep === 8) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำตุ้มขุยมะพร้าวให้ชื้น";
-        else if (currentStep === 9) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันตุ้มขุยมะพร้าวให้แน่น ไม่ให้หลุด";
+        if (currentStep === 1) desc.innerText = "เลือก [มือจับ 🖐️] ยกต้นตอ (ขวา) ออกจากกระถาง";
+        else if (currentStep === 2) desc.innerText = "เลือก [กรรไกร ✂️] ตัดยอดลำต้นต้นตอทิ้ง (เหนือรากขึ้นไปประมาณ 20 ซม.) - จุดบนลำต้น";
+        else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] ตัดรากแขนงออก ให้เหลือแต่รากแก้วเส้นเดียว - จุดที่ราก";
+        else if (currentStep === 4) desc.innerText = "เลือก [มีด 🔪] เปิดแผลที่ปลายกิ่งโค้งของต้นแม่ (ซ้าย)";
+        else if (currentStep === 5) desc.innerText = "เลือก [มือจับ 🖐️] นำต้นตอที่เตรียมไว้ ไปทาบกับแผลบนกิ่งของต้นแม่";
+        else if (currentStep === 6) desc.innerText = "เลือก [เทปพลาสติก 🩹] พันรอยทาบให้แน่น";
+        else if (currentStep === 7) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] นำมาใส่ตรงรากแก้วที่ห้อยอยู่";
+        else if (currentStep === 8) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำตุ้มขุยมะพร้าวให้ชื้น";
+        else if (currentStep === 9) desc.innerText = "เลือก [เทปพลาสติก 🩹] พันตุ้มขุยมะพร้าวให้แน่น ไม่ให้หลุด";
         else if (currentStep === 10) desc.innerText = "พันเสร็จแล้ว ต้องรอให้รอยทาบติดกัน — ชี้นิ้วค้างไว้ที่วงกลมทางขวา จนหลอดครบรอบ";
-        else if (currentStep === 11) desc.innerText = "รอยทาบติดสำเร็จ! เลือก [กรรไกร ✂️] จีบนิ้วตัดที่ใต้เทปนิดเดียว (เหลือตอกิ่งไว้ที่ต้นแม่) เพื่อให้ได้ทั้งกิ่งที่มีใบ พร้อมรอยทาบและตุ้ม ไปปลูก";
-        else if (currentStep === 12) desc.innerText = "เลือก [มือจับ 🖐️] แล้วจีบนิ้วลากกิ่งที่ตัดออกมา ไปปักลงกระถางใหม่";
-        else if (currentStep === 13) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] จีบนิ้วรดน้ำต้นที่ปักใหม่ ให้เจริญเติบโต";
+        else if (currentStep === 11) desc.innerText = "รอยทาบติดสำเร็จ! เลือก [กรรไกร ✂️] ตัดที่ใต้เทปนิดเดียว (เหลือตอกิ่งไว้ที่ต้นแม่) เพื่อให้ได้ทั้งกิ่งที่มีใบ พร้อมรอยทาบและตุ้ม ไปปลูก";
+        else if (currentStep === 12) desc.innerText = "เลือก [มือจับ 🖐️] แล้วลากกิ่งที่ตัดออกมา ไปปักลงกระถางใหม่";
+        else if (currentStep === 13) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำต้นที่ปักใหม่ ให้เจริญเติบโต";
         else if (currentStep === 14) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
       } else if (currentMode === 'grafting') {
         title.innerText = "5. การเสียบยอด (CLEFT GRAFTING)";
-        if (currentStep === 1) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดยอดต้นตอให้เรียบ";
-        else if (currentStep === 2) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วผ่าเปิดแผลกลางลำต้นตอเป็นรอยลิ่ม";
-        else if (currentStep === 3) desc.innerText = "เลือก [กรรไกร ✂️] จีบนิ้วตัดแต่งกิ่งขวาของต้นที่เตรียมไว้ (ขวา) ออก";
-        else if (currentStep === 4) desc.innerText = "ใช้ [กรรไกร ✂️] จีบนิ้วตัดแต่งกิ่งซ้ายออกด้วย";
-        else if (currentStep === 5) desc.innerText = "เลือก [มีด 🔪] จีบนิ้วเฉือนโคนต้นให้เป็นรูปตัว V เพื่อเตรียมเสียบยอด";
+        if (currentStep === 1) desc.innerText = "เลือก [กรรไกร ✂️] ตัดยอดต้นตอให้เรียบ";
+        else if (currentStep === 2) desc.innerText = "เลือก [มีด 🔪] ผ่าเปิดแผลกลางลำต้นตอเป็นรอยลิ่ม";
+        else if (currentStep === 3) desc.innerText = "เลือก [กรรไกร ✂️] ตัดแต่งกิ่งขวาของต้นที่เตรียมไว้ (ขวา) ออก";
+        else if (currentStep === 4) desc.innerText = "ใช้ [กรรไกร ✂️] ตัดแต่งกิ่งซ้ายออกด้วย";
+        else if (currentStep === 5) desc.innerText = "เลือก [มีด 🔪] เฉือนโคนต้นให้เป็นรูปตัว V เพื่อเตรียมเสียบยอด";
         else if (currentStep === 6) desc.innerText = "เลือก [มือจับ 🖐️] จับต้นที่เตรียมไว้ ลากมาเสียบลงในรอยผ่าของต้นตอ";
-        else if (currentStep === 7) desc.innerText = "เลือก [เทปพลาสติก 🩹] จีบนิ้วพันแผลรอยเสียบยอดให้แน่นสนิท!";
+        else if (currentStep === 7) desc.innerText = "เลือก [เทปพลาสติก 🩹] พันแผลรอยเสียบยอดให้แน่นสนิท!";
         else if (currentStep === 8) desc.innerText = "ทำครบทุกขั้นตอนแล้ว! ชี้นิ้วค้างไว้ที่วงกลม [เสร็จสิ้น] ด้านล่างเพื่อรับรางวัล";
       }
     }
