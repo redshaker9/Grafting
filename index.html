@@ -924,6 +924,10 @@
     // worldPos is the same point mapped into stage space for scene logic.
     let handPos = { detected: false, x: canvas.width / 2, y: canvas.height / 2, isPinching: false, lastUpdate: 0 };
     let worldPos = { x: WORLD_W / 2, y: WORLD_H / 2 };
+    // True while a finger/mouse button is physically held down. A finger
+    // resting perfectly still fires no move events, so without this the
+    // "pointer is live" check would time out and reset the dwell gauges.
+    let pointerHeld = false;
     function updateWorldPos() {
       worldPos.x = screenToWorldX(handPos.x);
       worldPos.y = screenToWorldY(handPos.y);
@@ -936,9 +940,11 @@
       if (!handPos.detected) { handPos.x = e.clientX; handPos.y = e.clientY; handPos.lastUpdate = performance.now(); }
     });
     canvas.addEventListener('mousedown', (e) => {
+      pointerHeld = true;
       if (!handPos.detected) handPos.isPinching = true;
     });
     canvas.addEventListener('mouseup', (e) => {
+      pointerHeld = false;
       if (!handPos.detected) handPos.isPinching = false;
     });
 
@@ -967,6 +973,7 @@
         panLastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
         return;
       }
+      pointerHeld = true;
       if (!handPos.detected) {
         const t = e.touches[0];
         if (t) {
@@ -1000,9 +1007,11 @@
 
     window.addEventListener('touchend', (e) => {
       if (e.touches.length < 2) panPointerId = null;
+      if (e.touches.length === 0) pointerHeld = false;
       if (isShellOpen()) return;
       if (!handPos.detected) handPos.isPinching = false;
     }, { passive: true });
+    window.addEventListener('touchcancel', () => { pointerHeld = false; }, { passive: true });
 
     // Simulation Data per Mode
     let simState = {
@@ -1046,7 +1055,7 @@
     let toolHoverConfirmed = {};
 
     function processToolHover(dtMs) {
-      const pointerLive = (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const pointerLive = pointerHeld || (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
 
       document.querySelectorAll('.tool-card').forEach(card => {
         const toolId = card.getAttribute('data-tool');
@@ -1188,7 +1197,7 @@
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       const radius = rect.width / 2;
-      const pointerLive = (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const pointerLive = pointerHeld || (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
       const hovering = pointerLive && Math.hypot(handPos.x - cx, handPos.y - cy) < radius;
 
       if (hovering) {
@@ -1257,7 +1266,7 @@
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       const radius = rect.width / 2;
-      const pointerLive = (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const pointerLive = pointerHeld || (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
       const hovering = pointerLive && Math.hypot(handPos.x - cx, handPos.y - cy) < radius;
 
       if (hovering) {
@@ -1940,14 +1949,21 @@
     let cachedLeaderboard = [];
     let initDataLoaded = false;
 
+    let initDataError = null;
+
     async function fetchInitData() {
-      if (!sheetApiReady()) return;
+      if (!sheetApiReady()) {
+        initDataError = 'ยังไม่ได้ตั้งค่าลิงก์ฐานข้อมูล';
+        return false;
+      }
       try {
         const res = await fetch(`${SHEET_API_URL}?action=getInitData`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         cachedStudents = data.students || [];
         cachedLeaderboard = data.leaderboard || [];
         initDataLoaded = true;
+        initDataError = null;
         populateStudentDropdown();
         applyModePictures(data.pictures);
         // If the player already logged in before this landed, fill in their points now
@@ -1957,9 +1973,20 @@
           const menuEl = document.getElementById('menuPointsValue');
           if (menuEl) menuEl.innerText = studentPoints;
         }
+        return true;
       } catch (err) {
         console.warn('Could not load init data:', err);
+        initDataError = 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ — เล่นได้ปกติ แต่คะแนนจะไม่ถูกบันทึก';
+        return false;
       }
+    }
+
+    // Shows the connection problem on the login card rather than leaving the
+    // name list mysteriously empty
+    function showInitDataStatus() {
+      const el = document.getElementById('loginStatusMsg');
+      if (!el) return;
+      el.innerText = initDataError || '';
     }
 
     function populateStudentDropdown() {
@@ -2122,7 +2149,7 @@
       updatePointsDisplay();
       document.getElementById('guestNameInput').value = '';
       document.getElementById('studentDropdown').value = '';
-      document.getElementById('loginStatusMsg').innerText = '';
+      showInitDataStatus();
       showAppScreen('screenLogin');
     }
     function showLeaderboardScreen() {
@@ -3086,10 +3113,26 @@
     // requested when the person actually presses the AR button, so opening
     // the app never triggers a permission prompt.
 
-    // App shell: fetch the student list in the background, then move from
-    // the loading screen to the login screen after a short, friendly pause
-    fetchInitData();
-    setTimeout(() => showAppScreen('screenLogin'), 1900);
+    // App shell startup: the loading screen doubles as the window for
+    // fetching sheet data, so by the time the login card appears the names,
+    // pictures and scores are already in hand. It waits for the fetch, but
+    // never less than the sprout animation nor longer than MAX_WAIT.
+    (async function bootAppShell() {
+      const MIN_WAIT_MS = 1900; // let the sprout animation finish
+      const MAX_WAIT_MS = 9000; // never hang on a slow/dead endpoint
+      const started = performance.now();
+
+      const fetchDone = fetchInitData();
+      const cap = new Promise((resolve) => setTimeout(resolve, MAX_WAIT_MS));
+      await Promise.race([fetchDone, cap]);
+
+      const elapsed = performance.now() - started;
+      if (elapsed < MIN_WAIT_MS) {
+        await new Promise((r) => setTimeout(r, MIN_WAIT_MS - elapsed));
+      }
+      showInitDataStatus();
+      showAppScreen('screenLogin');
+    })();
 
   </script>
 </body>
