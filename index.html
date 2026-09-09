@@ -409,6 +409,10 @@
       font-size: 1.6rem; line-height: 1; font-family: inherit;
       display: flex; align-items: center; justify-content: center;
       backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+      /* stops the browser treating a quick double tap as a zoom gesture */
+      touch-action: manipulation;
+      -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
     .pan-btn:active { background: rgba(8, 20, 10, .72); }
     @media (min-width: 1024px) {
@@ -620,8 +624,8 @@
 
   <!-- Stage pan controls: shown only when the stage is wider than the screen -->
   <div id="panControls" class="pan-controls hidden">
-    <button class="pan-btn" onclick="panStage(140)" aria-label="เลื่อนไปทางซ้าย">‹</button>
-    <button class="pan-btn" onclick="panStage(-140)" aria-label="เลื่อนไปทางขวา">›</button>
+    <button id="panLeftBtn" class="pan-btn" type="button" aria-label="เลื่อนไปทางซ้าย">‹</button>
+    <button id="panRightBtn" class="pan-btn" type="button" aria-label="เลื่อนไปทางขวา">›</button>
   </div>
 
   <!-- Main AR Canvas Viewport -->
@@ -824,7 +828,7 @@
       let zoom = 1;
       if (isCompactScreen()) {
         const maxZoomByHeight = (canvas.height * 1.15) / (WORLD_H * fit);
-        zoom = Math.max(1, Math.min(2, maxZoomByHeight));
+        zoom = Math.max(1, Math.min(1.6, maxZoomByHeight));
       }
       view.scale = fit * zoom;
 
@@ -849,6 +853,42 @@
       updateViewTransform();
       updatePanButtons();
     }
+
+    // Hold-to-pan: glides at a steady speed for as long as the button is held,
+    // using elapsed time so it moves the same distance per second regardless
+    // of frame rate. A quick tap just nudges the view slightly.
+    const PAN_SPEED_PX_PER_SEC = 480;
+    let panHoldDir = 0;
+    let panHoldRaf = null;
+    let panHoldLastTs = 0;
+
+    function panHoldStep(ts) {
+      if (panHoldDir === 0) { panHoldRaf = null; return; }
+      const dt = Math.min(0.05, (ts - panHoldLastTs) / 1000); // clamp big gaps
+      panHoldLastTs = ts;
+      panStage(panHoldDir * PAN_SPEED_PX_PER_SEC * dt);
+      panHoldRaf = requestAnimationFrame(panHoldStep);
+    }
+    function startPanHold(dir) {
+      panHoldDir = dir;
+      if (panHoldRaf !== null) return;
+      panHoldLastTs = performance.now();
+      panHoldRaf = requestAnimationFrame(panHoldStep);
+    }
+    function stopPanHold() { panHoldDir = 0; }
+
+    function wirePanButton(id, dir) {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      const start = (e) => { e.preventDefault(); startPanHold(dir); };
+      btn.addEventListener('pointerdown', start);
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((evt) =>
+        btn.addEventListener(evt, stopPanHold));
+      // Guard against a stuck pan if the pointer is released off-button
+      window.addEventListener('pointerup', stopPanHold);
+    }
+    wirePanButton('panLeftBtn', 1);
+    wirePanButton('panRightBtn', -1);
 
     function updatePanButtons() {
       const wrap = document.getElementById('panControls');
@@ -2924,7 +2964,7 @@
       // edge to edge, but its horizon is placed exactly where the world's
       // ground line lands after scaling - so the trees still stand on it.
       const groundScreenY = worldToScreenY(groundY);
-      ctx.fillStyle = useARCamera ? 'rgba(255, 255, 255, 0.2)' : '#f1f5f9';
+      ctx.fillStyle = useARCamera ? 'rgba(226, 230, 234, 0.28)' : '#d9dee3';
       ctx.fillRect(0, 0, canvas.width, Math.max(0, groundScreenY));
 
       const cloudAlpha = useARCamera ? 0.55 : 0.9;
