@@ -250,6 +250,12 @@
     .mode-name {
       padding: 11px 12px 13px; font-size: .95rem; font-weight: 700;
       color: var(--ink); border-top: 2px dashed rgba(46, 33, 22, .25);
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .mode-pts {
+      font-style: normal; font-size: .74rem; font-weight: 700;
+      color: #7A4A12; background: #F0C368;
+      padding: 2px 7px; border-radius: 999px; white-space: nowrap;
     }
     @media (min-width: 640px) { .mode-packet-wide { grid-column: span 1; } }
 
@@ -543,7 +549,7 @@
               <path d="M50 70 L42 79"/><path d="M50 70 L58 79"/><path d="M50 70 L50 81"/>
             </g>
           </svg>
-          <span class="mode-name">การปักชำ</span>
+          <span class="mode-name">การปักชำ<em class="mode-pts">+100</em></span>
         </button>
 
         <button onclick="enterMode('layering')" class="mode-packet">
@@ -559,7 +565,7 @@
             <rect x="59" y="26" width="6" height="15" rx="3" fill="#9DC6E8" opacity="0.9"/>
             <circle cx="80" cy="20" r="11" fill="#6FA84A"/>
           </svg>
-          <span class="mode-name">การตอนกิ่ง</span>
+          <span class="mode-name">การตอนกิ่ง<em class="mode-pts">+180</em></span>
         </button>
 
         <button onclick="enterMode('budding')" class="mode-packet">
@@ -573,7 +579,7 @@
             <path d="M50 44 C58 40 62 32 62 26" stroke="#4E7A3A" stroke-width="3.5" stroke-linecap="round" fill="none"/>
             <circle cx="64" cy="23" r="7" fill="#6FA84A"/>
           </svg>
-          <span class="mode-name">การติดตา</span>
+          <span class="mode-name">การติดตา<em class="mode-pts">+160</em></span>
         </button>
 
         <button onclick="enterMode('inarching')" class="mode-packet">
@@ -588,7 +594,7 @@
             <circle cx="24" cy="14" r="12" fill="#6FA84A"/>
             <circle cx="80" cy="76" r="9" fill="#8CC463"/>
           </svg>
-          <span class="mode-name">การทาบกิ่ง</span>
+          <span class="mode-name">การทาบกิ่ง<em class="mode-pts">+240</em></span>
         </button>
 
         <button onclick="enterMode('grafting')" class="mode-packet mode-packet-wide">
@@ -604,7 +610,7 @@
             <circle cx="62" cy="16" r="6" fill="#8CC463"/>
             <rect x="38" y="40" width="24" height="10" rx="4" fill="#9DC6E8" opacity="0.95"/>
           </svg>
-          <span class="mode-name">การเสียบยอด</span>
+          <span class="mode-name">การเสียบยอด<em class="mode-pts">+150</em></span>
         </button>
       </div>
 
@@ -1241,6 +1247,9 @@
     let finishCircleProgress = 0;
     let finishCircleConfirmed = false;
     const FINAL_STEP_BY_MODE = { cutting: 5, layering: 10, budding: 8, inarching: 14, grafting: 8 };
+    // Reward scaled to how involved each method is, so the longer techniques
+    // are worth attempting rather than everyone farming the shortest one.
+    const POINTS_BY_MODE = { cutting: 100, layering: 180, budding: 160, inarching: 240, grafting: 150 };
 
     function showFinishCirclePanel() {
       const panel = document.getElementById('finishCirclePanel');
@@ -1284,8 +1293,9 @@
     function confirmFinishReward() {
       playSound('success');
       spawnSuccessSparkles(WORLD_W / 2, WORLD_H * 0.35);
-      awardPoints(100);
-      showGiftBoxReward(100);
+      const reward = POINTS_BY_MODE[currentMode] || 100;
+      awardPoints(reward);
+      showGiftBoxReward(reward);
       hideFinishCirclePanel();
     }
 
@@ -1853,10 +1863,11 @@
       const tip = getInarchingBranchTip();
       return { x: origin.x + (tip.x - origin.x) * INARCH_UNION_T, y: origin.y + (tip.y - origin.y) * INARCH_UNION_T };
     }
-    // Where the branch gets cut to harvest the graft: just a little below
-    // (trunk-side of) the tape/union - not all the way at the trunk - so a
-    // short stub is left behind on the mother tree.
-    const INARCH_CUT_T = 0.46;
+    // Where the branch gets cut to harvest the graft. Sits well below
+    // (trunk-side of) the tape/union so the harvested piece keeps a stub
+    // beneath the union, which helps prop the new plant up when it's
+    // replanted - and still leaves a short stub on the mother tree.
+    const INARCH_CUT_T = 0.34;
     function getInarchingCutPos() {
       const origin = getInarchingBranchOrigin();
       const tip = getInarchingBranchTip();
@@ -2170,10 +2181,103 @@
       showAppScreen('screenModeSelect');
     }
 
+    // Deterministic pseudo-random from a seed. Organic detail needs to look
+    // scattered but must NOT change between frames, or the canopy shimmers.
+    function hashRand(seed) {
+      const s = Math.sin(seed * 12.9898) * 43758.5453;
+      return s - Math.floor(s);
+    }
+
+    // Bark-textured limb. Same footprint as a plain fillRect, but with a
+    // rounded gradient across the width and vertical bark striations.
+    function paintBark(x0, y0, w, h) {
+      const g = ctx.createLinearGradient(x0, 0, x0 + w, 0);
+      g.addColorStop(0.00, "#4a2610");
+      g.addColorStop(0.28, "#8a5230");
+      g.addColorStop(0.52, "#70401f");
+      g.addColorStop(0.80, "#532d15");
+      g.addColorStop(1.00, "#38200e");
+      ctx.fillStyle = g;
+      ctx.fillRect(x0, y0, w, h);
+
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
+      const lines = Math.max(2, Math.round(Math.abs(w) / 13));
+      ctx.lineWidth = Math.max(1, Math.abs(w) * 0.04);
+      for (let i = 0; i < lines; i++) {
+        const t = (i + 0.5) / lines;
+        const lx = x0 + w * t + (hashRand(i * 7 + Math.abs(w)) * 5 - 2.5);
+        ctx.strokeStyle = i % 2 ? "rgba(38,20,8,0.34)" : "rgba(190,140,95,0.16)";
+        ctx.beginPath();
+        ctx.moveTo(lx, y0);
+        ctx.bezierCurveTo(lx + 3, y0 + h * 0.34, lx - 3, y0 + h * 0.67, lx + 1, y0 + h);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Bark shading for an angled limb drawn as a stroked line. The gradient
+    // runs across the limb's width (perpendicular to its direction) so it
+    // reads as the same rounded bark as paintBark's rectangles.
+    function barkStrokeGradient(from, to, width) {
+      const dx = to.x - from.x, dy = to.y - from.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const px = -dy / len, py = dx / len;   // perpendicular unit vector
+      const cx = (from.x + to.x) / 2, cy = (from.y + to.y) / 2;
+      const g = ctx.createLinearGradient(
+        cx - px * width / 2, cy - py * width / 2,
+        cx + px * width / 2, cy + py * width / 2
+      );
+      g.addColorStop(0.00, "#4a2610");
+      g.addColorStop(0.28, "#8a5230");
+      g.addColorStop(0.52, "#70401f");
+      g.addColorStop(0.80, "#532d15");
+      g.addColorStop(1.00, "#38200e");
+      return g;
+    }
+
+    // A freshly cut face - pale sapwood with a darker bark ring
+    function paintCutFace(cx, cy, rx, ry) {
+      const g = ctx.createRadialGradient(cx - rx * 0.3, cy - ry * 0.4, rx * 0.15, cx, cy, rx);
+      g.addColorStop(0, "#fffbeb"); g.addColorStop(1, "#dcc79a");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(90,55,25,0.55)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+
     function drawLeafCloud(x, y, r) {
-      ctx.fillStyle = "#16a34a"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = "#15803d"; ctx.beginPath(); ctx.arc(x-r*0.3, y+r*0.3, r*0.7, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = "#22c55e"; ctx.beginPath(); ctx.arc(x+r*0.3, y-r*0.3, r*0.6, 0, Math.PI*2); ctx.fill();
+      const seed = Math.round(x * 0.37 + y * 0.71 + r * 1.7);
+
+      // Shadowed underside gives the mass some weight
+      ctx.fillStyle = "#14532d";
+      ctx.beginPath(); ctx.arc(x, y + r * 0.15, r * 0.98, 0, Math.PI * 2); ctx.fill();
+
+      // Irregular lobes break up the perfect circle silhouette
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + hashRand(seed + i) * 0.7;
+        const d = r * (0.40 + hashRand(seed + i * 3) * 0.30);
+        const lr = r * (0.40 + hashRand(seed + i * 7) * 0.24);
+        ctx.fillStyle = i % 2 ? "#166534" : "#15803d";
+        ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Main mass, lit from the upper left
+      const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.42, r * 0.08, x, y, r);
+      g.addColorStop(0.00, "#5fd67f");
+      g.addColorStop(0.45, "#26a34e");
+      g.addColorStop(1.00, "#15803d");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r * 0.93, 0, Math.PI * 2); ctx.fill();
+
+      // Sunlit leaf clusters catching the light
+      ctx.fillStyle = "rgba(146, 240, 168, 0.5)";
+      for (let i = 0; i < 4; i++) {
+        const a = -2.35 + hashRand(seed + 40 + i) * 1.5;
+        const d = r * (0.28 + hashRand(seed + 50 + i) * 0.32);
+        const hr = r * (0.12 + hashRand(seed + 60 + i) * 0.10);
+        ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, hr, 0, Math.PI * 2); ctx.fill();
+      }
     }
 
     // A fluffy background cloud, made of overlapping circles - drawn in the
@@ -2213,8 +2317,25 @@
       const ballRadius = 27 * s;
       ctx.save(); ctx.translate(x, y);
       if (showCoconut) {
-        ctx.fillStyle = "#854d0e";
+        const husk = ctx.createRadialGradient(-ballRadius * 0.3, -ballRadius * 0.35, ballRadius * 0.1, 0, 0, ballRadius);
+        husk.addColorStop(0.00, "#a8743c");
+        husk.addColorStop(0.55, "#854d0e");
+        husk.addColorStop(1.00, "#54300a");
+        ctx.fillStyle = husk;
         ctx.beginPath(); ctx.arc(0, 0, ballRadius, 0, Math.PI * 2); ctx.fill();
+        // coir fibres
+        ctx.save();
+        ctx.beginPath(); ctx.arc(0, 0, ballRadius, 0, Math.PI * 2); ctx.clip();
+        ctx.strokeStyle = "rgba(214, 168, 108, 0.35)"; ctx.lineWidth = 1.6;
+        for (let i = 0; i < 14; i++) {
+          const a = hashRand(i * 4.3) * Math.PI * 2;
+          const d = ballRadius * (0.15 + hashRand(i * 2.9) * 0.85);
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * d, Math.sin(a) * d);
+          ctx.lineTo(Math.cos(a + 0.7) * d * 0.85, Math.sin(a + 0.7) * d * 0.85);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
       if (showRoots) {
         // Roots fan out from inside the husk, reaching a little past its edge
@@ -2321,7 +2442,7 @@
     // branch), angled up and to the right.
     function drawDiagonalBranch(origin, tip, showLeaves = true) {
       ctx.save();
-      ctx.strokeStyle = "#92400e";
+      ctx.strokeStyle = barkStrokeGradient(origin, tip, 43);
       ctx.lineWidth = 43;
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -2396,7 +2517,7 @@
       const endX = startX + Math.cos(angle) * length;
       const endY = startY + Math.sin(angle) * length;
       ctx.save();
-      ctx.strokeStyle = "#92400e";
+      ctx.strokeStyle = barkStrokeGradient({ x: startX, y: startY }, { x: endX, y: endY }, 43 * w);
       ctx.lineWidth = 43 * w;
       ctx.lineCap = "round";
       ctx.beginPath();
@@ -2546,38 +2667,96 @@
       return { x: donor.x, y: donor.y - 30 };
     }
 
+    // A small plaque under a pot naming what that plant is, so students can
+    // always tell the rootstock from the good-variety plant at a glance.
+    function drawPotLabel(x, y, text, tone) {
+      ctx.save();
+      ctx.font = "bold 24px Kanit";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "alphabetic";
+      const w = ctx.measureText(text).width + 34;
+      const h = 38, rx = x - w / 2, ry = y, r = 10;
+
+      ctx.beginPath();
+      ctx.moveTo(rx + r, ry);
+      ctx.lineTo(rx + w - r, ry);      ctx.quadraticCurveTo(rx + w, ry, rx + w, ry + r);
+      ctx.lineTo(rx + w, ry + h - r);  ctx.quadraticCurveTo(rx + w, ry + h, rx + w - r, ry + h);
+      ctx.lineTo(rx + r, ry + h);      ctx.quadraticCurveTo(rx, ry + h, rx, ry + h - r);
+      ctx.lineTo(rx, ry + r);          ctx.quadraticCurveTo(rx, ry, rx + r, ry);
+      ctx.closePath();
+
+      ctx.fillStyle = "rgba(18, 32, 16, 0.86)";
+      ctx.fill();
+      ctx.strokeStyle = tone === 'stock' ? "rgba(214, 158, 106, 0.9)" : "rgba(134, 220, 140, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = tone === 'stock' ? "#F0D3B0" : "#D8F3D0";
+      ctx.fillText(text, x, ry + 26);
+      ctx.restore();
+    }
+
     function drawStylizedTree(x, y, scale = 1, config = {}) {
       ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
 
+      // Contact shadow, only where the plant is actually resting in a pot -
+      // a lifted / carried plant shouldn't drag a shadow around with it
+      if (config.showPot !== false) {
+        ctx.fillStyle = "rgba(12, 30, 12, 0.22)";
+        ctx.beginPath(); ctx.ellipse(0, 6, 86, 15, 0, 0, Math.PI * 2); ctx.fill();
+      }
+
       // Draw Pot
       if (config.showPot !== false) {
-        ctx.fillStyle = "#b45309"; ctx.beginPath(); ctx.moveTo(-70, 0); ctx.lineTo(70, 0); ctx.lineTo(55, 110); ctx.lineTo(-55, 110); ctx.fill();
-        ctx.fillStyle = "#d97706"; ctx.fillRect(-75, -12, 150, 15);
-        ctx.fillStyle = "#451a03"; ctx.beginPath(); ctx.ellipse(0, -10, 68, 12, 0, 0, Math.PI * 2); ctx.fill();
+        const body = ctx.createLinearGradient(-70, 0, 70, 0);
+        body.addColorStop(0.00, "#7a3a1e");
+        body.addColorStop(0.30, "#c2703d");
+        body.addColorStop(0.55, "#a85a30");
+        body.addColorStop(1.00, "#6d321a");
+        ctx.fillStyle = body;
+        ctx.beginPath(); ctx.moveTo(-70, 0); ctx.lineTo(70, 0); ctx.lineTo(55, 110); ctx.lineTo(-55, 110); ctx.closePath(); ctx.fill();
+
+        // Rim band, slightly proud of the body
+        const rim = ctx.createLinearGradient(-75, -12, 75, 3);
+        rim.addColorStop(0.00, "#8a4022");
+        rim.addColorStop(0.35, "#d98149");
+        rim.addColorStop(1.00, "#7a3a1e");
+        ctx.fillStyle = rim; ctx.fillRect(-75, -12, 150, 15);
+        ctx.fillStyle = "rgba(255, 222, 184, 0.28)"; ctx.fillRect(-75, -12, 150, 3);
+
+        // Soil, with a little grit
+        ctx.fillStyle = "#3b2416";
+        ctx.beginPath(); ctx.ellipse(0, -10, 68, 12, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(120, 88, 58, 0.55)";
+        for (let i = 0; i < 12; i++) {
+          const sx = -58 + hashRand(i * 3.1) * 116;
+          const sy = -14 + hashRand(i * 5.7) * 9;
+          ctx.beginPath(); ctx.arc(sx, sy, 1.6 + hashRand(i * 9.3) * 1.6, 0, Math.PI * 2); ctx.fill();
+        }
       }
       if (config.showTree === false) { ctx.restore(); return; }
 
       // Draw Trunk
       const trunkWidthScale = config.trunkWidthScale || 1;
-      const trunkGrad = ctx.createLinearGradient(-25 * trunkWidthScale, 0, 25 * trunkWidthScale, 0);
-      trunkGrad.addColorStop(0, "#78350f"); trunkGrad.addColorStop(0.5, "#92400e"); trunkGrad.addColorStop(1, "#451a03");
-      ctx.fillStyle = trunkGrad;
 
       if (config.cutTop) {
-        ctx.fillRect(-22 * trunkWidthScale, -220, 44 * trunkWidthScale, 220);
-        ctx.fillStyle = "#fef3c7"; ctx.beginPath(); ctx.ellipse(0, -220, 22 * trunkWidthScale, 7, 0, 0, Math.PI * 2); ctx.fill();
+        paintBark(-22 * trunkWidthScale, -220, 44 * trunkWidthScale, 220);
+        paintCutFace(0, -220, 22 * trunkWidthScale, 7);
         if (config.stemSplit) { ctx.strokeStyle = "#451a03"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -220); ctx.lineTo(0, -180); ctx.stroke(); }
       } else {
         // plantedInGround: reach all the way down to the actual bottom edge
         // of the canvas (dynamic, so it works at any screen size) instead of
         // a fixed offset
         const groundExtra = config.plantedInGround ? Math.max(0, (WORLD_H - y) / scale) : 0;
-        ctx.fillRect(-22 * trunkWidthScale, -320, 44 * trunkWidthScale, 320 + groundExtra);
+        paintBark(-22 * trunkWidthScale, -320, 44 * trunkWidthScale, 320 + groundExtra);
         if (!config.hideBranch) {
-          if (config.branchCut) ctx.fillRect(10, -240, 45, 20); else ctx.fillRect(10, -240, 150, 20);
+          if (config.branchCut) {
+            paintBark(10, -240, 45, 20);
+            paintCutFace(55, -230, 5, 10);
+          } else paintBark(10, -240, 150, 20);
         }
         const leftBranchLen = config.leftBranchLength || 100;
-        ctx.fillRect(-(leftBranchLen + 10), -210, leftBranchLen, 22);
+        paintBark(-(leftBranchLen + 10), -210, leftBranchLen, 22);
         
         // Draw Leaves
         if (config.showLeaves !== false) {
@@ -2591,7 +2770,7 @@
 
     function drawCutBranchItem(x, y, scale = 1, leavesTrimmed = false) {
       ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
-      ctx.fillStyle = "#78350f"; ctx.fillRect(-8, -50, 16, 90);
+      paintBark(-8, -50, 16, 90);
       if (!leavesTrimmed) { drawLeafCloud(0, -50, 25); drawLeafCloud(-15, -20, 18); drawLeafCloud(15, -20, 18); } 
       else { drawLeafCloud(0, -50, 15); }
       ctx.restore();
@@ -2605,6 +2784,8 @@
         // The destination pot should never show a full tree shape - only ever
         // an empty pot, with the planted cutting itself drawn separately below.
         drawStylizedTree(WORLD_W * 0.7, groundY, 1.25, { showTree: false });
+        drawPotLabel(WORLD_W * 0.3, groundY + 45, "ต้นพันธุ์ดี", 'scion');
+        drawPotLabel(WORLD_W * 0.7, groundY + 45, "กระถางปักชำ", 'stock');
         
         if (simState.branchCut && !simState.plantedBranchInPot) {
           drawCutBranchItem(simState.cutBranchPos.x, simState.cutBranchPos.y, 1.2, simState.leavesTrimmed);
@@ -2635,16 +2816,30 @@
         drawStylizedTree(WORLD_W * 0.5, groundY, 1.25, { showLeaves: true, branchCut: simState.layerHarvested });
         // Empty pot waiting for the harvested, already-rooted cutting
         drawStylizedTree(WORLD_W * 0.85, groundY, 1.0, { showTree: false });
+        drawPotLabel(WORLD_W * 0.5, groundY + 45, "ต้นพันธุ์ดี", 'scion');
+        drawPotLabel(WORLD_W * 0.85, groundY + 38, "กระถางปลูกใหม่", 'stock');
 
         const { x: branchX, y: branchY } = getLayeringBranchPos();
         const { x: newPotX, y: newPotY } = getLayeringNewPotPos();
 
         if (!simState.layerHarvested) {
-          // Bark/cambium exposure drawn as a simple rectangle on the branch
+          // Bark/cambium exposure - sized to sit exactly within the branch's
+          // own thickness (25px at this scale) rather than bulging past it
           if (simState.barkStripped && !simState.coconutWrapped) {
             ctx.save(); ctx.translate(branchX, branchY);
-            ctx.fillStyle = simState.cambiumScraped ? "#fffbeb" : "#fef3c7";
-            ctx.fillRect(-10, -20, 20, 40);
+            const woundH = 25, woundW = 22;
+            const wg = ctx.createLinearGradient(0, -woundH / 2, 0, woundH / 2);
+            if (simState.cambiumScraped) {
+              wg.addColorStop(0, "#fffdf5"); wg.addColorStop(0.5, "#fff8e3"); wg.addColorStop(1, "#e8d8ae");
+            } else {
+              wg.addColorStop(0, "#fdf0cd"); wg.addColorStop(0.5, "#f6e4b4"); wg.addColorStop(1, "#d9c290");
+            }
+            ctx.fillStyle = wg;
+            ctx.fillRect(-woundW / 2, -woundH / 2, woundW, woundH);
+            // bark edges either side of the girdle
+            ctx.fillStyle = "rgba(70, 40, 16, 0.55)";
+            ctx.fillRect(-woundW / 2 - 2, -woundH / 2, 2, woundH);
+            ctx.fillRect(woundW / 2, -woundH / 2, 2, woundH);
             ctx.restore();
           }
           // Coconut husk / water dots / roots / translucent tape stack
@@ -2693,6 +2888,8 @@
         // same cutTop stump visual as the cutting-mode's harvested branch)
         drawStylizedTree(WORLD_W * 0.45, groundY, 1.25, { showLeaves: true, cutTop: simState.rootstockToppedOff });
         drawStylizedTree(WORLD_W * 0.75, groundY, 1.0, { showLeaves: true });
+        drawPotLabel(WORLD_W * 0.45, groundY + 45, "ต้นตอ", 'stock');
+        drawPotLabel(WORLD_W * 0.75, groundY + 38, "ต้นพันธุ์ดี", 'scion');
 
         const { x: trunkX, y: trunkY } = getBuddingTrunkPos();
         const { x: budSrcX, y: budSrcY } = getBuddingBudSourcePos();
@@ -2768,6 +2965,8 @@
         // The trunk-side end keeps its natural round cap; only the cut end
         // gets a flat cross-section cap overlaid on top.
         drawStylizedTree(WORLD_W * 0.35, groundY, 2.0, { showLeaves: true, branchCut: true, hideBranch: true, showPot: false, plantedInGround: true, trunkWidthScale: 2, leftBranchLength: 125 });
+        drawPotLabel(WORLD_W * 0.35, groundY + 40, "ต้นพันธุ์ดี", 'scion');
+        drawPotLabel(potPos.x, potPos.y + 38, "ต้นตอ", 'stock');
         if (!simState.inarchHarvested) {
           drawDiagonalBranch(origin, tip, true);
         } else {
@@ -2806,8 +3005,16 @@
               // offset used for the stump itself - so it follows correctly
               // whether resting in place or being dragged around.
               const attachPos = getInarchRotatedPoint(simState.inarchRootstockPos, inarchTiltDeg, 0, -135);
-              const branchLen = Math.hypot(tip.x - union.x, tip.y - union.y);
-              drawHarvestedBranchSegment(attachPos, branchAngle, branchLen, 0.04);
+              // The rootstock is bonded at the union, and the branch carries
+              // on a little past it toward the trunk - that leftover stub is
+              // what steadies the plant once it's potted.
+              const stubLen = Math.hypot(union.x - cutPos.x, union.y - cutPos.y);
+              const branchLen = Math.hypot(tip.x - cutPos.x, tip.y - cutPos.y);
+              const segStart = {
+                x: attachPos.x - Math.cos(branchAngle) * stubLen,
+                y: attachPos.y - Math.sin(branchAngle) * stubLen
+              };
+              drawHarvestedBranchSegment(segStart, branchAngle, branchLen, stubLen / branchLen);
             }
           } else {
             // Finally replanted: the SAME model as when harvested (stump +
@@ -2837,9 +3044,12 @@
               stumpWidthScale: stumpWidthScale
             });
             const plantedAttachPos = { x: potPos.x, y: buriedPos.y - 150 * potScale };
-            const baseBranchLen = Math.hypot(tip.x - union.x, tip.y - union.y);
+            const plantedStub = Math.hypot(union.x - cutPos.x, union.y - cutPos.y);
+            const baseBranchLen = Math.hypot(tip.x - cutPos.x, tip.y - cutPos.y);
             const mainBranchLen = baseBranchLen * heightScale;
-            drawHarvestedBranchSegment(plantedAttachPos, -Math.PI / 2, mainBranchLen, 0.04, 1, leafTier);
+            // union sits a stub-length above the segment's lower end
+            const plantedSegStart = { x: plantedAttachPos.x, y: plantedAttachPos.y + plantedStub };
+            drawHarvestedBranchSegment(plantedSegStart, -Math.PI / 2, mainBranchLen, plantedStub / mainBranchLen, 1, leafTier);
 
             // A new side branch sprouts diagonally upward, with small leaves,
             // as the plant matures from watering
@@ -2850,7 +3060,8 @@
               const sideEndX = sideOrigin.x + Math.cos(sideAngle) * sideLen;
               const sideEndY = sideOrigin.y + Math.sin(sideAngle) * sideLen;
               ctx.save();
-              ctx.strokeStyle = "#92400e"; ctx.lineWidth = 14; ctx.lineCap = "round";
+              ctx.strokeStyle = barkStrokeGradient(sideOrigin, { x: sideEndX, y: sideEndY }, 14);
+              ctx.lineWidth = 14; ctx.lineCap = "round";
               ctx.beginPath(); ctx.moveTo(sideOrigin.x, sideOrigin.y); ctx.lineTo(sideEndX, sideEndY); ctx.stroke();
               ctx.restore();
               drawLeafCloud(sideEndX, sideEndY - 8, 22);
@@ -2903,6 +3114,11 @@
         const basePos = getGraftingDonorBasePos();
 
         drawStylizedTree(WORLD_W * 0.45, groundY, 1.25, { cutTop: simState.rootstockTopCut, stemSplit: simState.stemSplit });
+
+        drawPotLabel(WORLD_W * 0.45, groundY + 45, "ต้นตอ", 'stock');
+        if (!simState.scionHeld && !simState.scionInserted) {
+          drawPotLabel(donorPos.x, donorPos.y + 40, "ต้นพันธุ์ดี", 'scion');
+        }
 
         // The donor tree: already prepared, standing free without a pot.
         // Shown at its resting spot until picked up in step 6; once carried
