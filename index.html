@@ -103,6 +103,7 @@
       border: 1px solid rgba(46, 33, 22, .18);
     }
     .packet-head {
+      position: relative;
       padding: 22px 24px 18px;
       text-align: center;
       background: var(--paper);
@@ -198,6 +199,22 @@
       content: ""; flex: 1; height: 1px; background: rgba(46, 33, 22, .2);
     }
     .status-msg { margin-top: 10px; font-size: .8rem; color: var(--clay-dark); min-height: 1em; }
+    .btn-retry {
+      position: absolute; top: 10px; right: 10px;
+      width: 2rem; height: 2rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(46, 33, 22, .07); color: var(--ink-soft);
+      border: 1px solid rgba(46, 33, 22, .22);
+      font-family: inherit; font-size: 1rem; line-height: 1; cursor: pointer;
+      transition: background .18s ease, color .18s ease, border-color .18s ease;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    }
+    .btn-retry:hover { background: rgba(46, 33, 22, .14); }
+    .btn-retry.is-busy { color: var(--ink-soft); opacity: .7; cursor: default; }
+    .btn-retry.is-ok {
+      background: rgba(78, 122, 58, .16); color: #3F6B33;
+      border-color: rgba(78, 122, 58, .55);
+    }
 
     /* --- Nursery bench (mode select) --- */
     .bench-head {
@@ -463,6 +480,7 @@
     <div id="screenLogin" class="hidden m-auto w-full max-w-[26rem]">
       <div class="packet">
         <div class="packet-head">
+          <button id="retryBtn" onclick="retryInitData()" class="btn-retry" title="ลองเชื่อมต่อใหม่" aria-label="ลองเชื่อมต่อใหม่">↻</button>
           <svg viewBox="0 0 96 96" class="login-mark" aria-hidden="true">
             <circle cx="48" cy="48" r="45" fill="none" stroke="#B4693E" stroke-width="2.5"/>
             <circle cx="48" cy="48" r="39" fill="none" stroke="#B4693E" stroke-width="1" opacity="0.5"/>
@@ -1962,34 +1980,118 @@
 
     let initDataError = null;
 
+    // Apps Script can be slow to wake, and it queues requests when several
+    // students hit it at once - so every call gets a hard timeout and a few
+    // retries, and results are cached locally as a fallback.
+    const API_TIMEOUT_MS = 7000;
+    const API_RETRIES = 3;
+    const CACHE_KEY = 'plantProp.initData.v1';
+
+    function readLocalCache() {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (err) { return null; }
+    }
+    function writeLocalCache(data) {
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch (err) { /* storage unavailable */ }
+    }
+
+    async function fetchWithTimeout(url, ms, options = {}) {
+      // AbortController is what actually stops a hung request - fetch() on its
+      // own will wait forever
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      try {
+        return await fetch(url, { ...options, signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function applyInitData(data) {
+      cachedStudents = data.students || [];
+      cachedLeaderboard = data.leaderboard || [];
+      initDataLoaded = true;
+      populateStudentDropdown();
+      applyModePictures(data.pictures);
+      if (currentPlayerName) {
+        studentPoints = lookupPointsFor(currentPlayerName);
+        updatePointsDisplay();
+        const menuEl = document.getElementById('menuPointsValue');
+        if (menuEl) menuEl.innerText = studentPoints;
+      }
+    }
+
     async function fetchInitData() {
       if (!sheetApiReady()) {
         initDataError = 'ยังไม่ได้ตั้งค่าลิงก์ฐานข้อมูล';
         return false;
       }
-      try {
-        const res = await fetch(`${SHEET_API_URL}?action=getInitData`);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        cachedStudents = data.students || [];
-        cachedLeaderboard = data.leaderboard || [];
-        initDataLoaded = true;
+
+      // Show last-known data immediately so the name list is never blank
+      // while we wait on the network
+      const cached = readLocalCache();
+      if (cached && !initDataLoaded) {
+        applyInitData(cached);
         initDataError = null;
-        populateStudentDropdown();
-        applyModePictures(data.pictures);
-        // If the player already logged in before this landed, fill in their points now
-        if (currentPlayerName) {
-          studentPoints = lookupPointsFor(currentPlayerName);
-          updatePointsDisplay();
-          const menuEl = document.getElementById('menuPointsValue');
-          if (menuEl) menuEl.innerText = studentPoints;
-        }
-        return true;
-      } catch (err) {
-        console.warn('Could not load init data:', err);
-        initDataError = 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ — เล่นได้ปกติ แต่คะแนนจะไม่ถูกบันทึก';
-        return false;
       }
+
+      for (let attempt = 1; attempt <= API_RETRIES; attempt++) {
+        try {
+          const res = await fetchWithTimeout(`${SHEET_API_URL}?action=getInitData&t=${Date.now()}`, API_TIMEOUT_MS);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          applyInitData(data);
+          writeLocalCache(data);
+          initDataError = null;
+          return true;
+        } catch (err) {
+          console.warn(`Init data attempt ${attempt}/${API_RETRIES} failed:`, err);
+          if (attempt < API_RETRIES) {
+            await new Promise((r) => setTimeout(r, attempt * 900)); // back off a little
+          }
+        }
+      }
+
+      initDataError = cached
+        ? 'ใช้รายชื่อที่บันทึกไว้ล่าสุด (เชื่อมต่อช้า) — แตะ "ลองโหลดใหม่" เพื่อดึงข้อมูลล่าสุด'
+        : 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ — แตะ "ลองโหลดใหม่" หรือเล่นแบบผู้เยี่ยมชมได้เลย';
+      return false;
+    }
+
+    // Manual retry from the login card. The icon itself reports the state:
+    // ↻ idle → … while connecting → ✓ on success (then back to ↻ so it can
+    // be used again), and straight back to ↻ if it failed.
+    let retryBtnTimer = null;
+    function setRetryBtnState(state) {
+      const btn = document.getElementById('retryBtn');
+      if (!btn) return;
+      clearTimeout(retryBtnTimer);
+      btn.classList.remove('is-busy', 'is-ok');
+      if (state === 'busy') {
+        btn.textContent = '…';
+        btn.classList.add('is-busy');
+        btn.disabled = true;
+      } else if (state === 'ok') {
+        btn.textContent = '✓';
+        btn.classList.add('is-ok');
+        btn.disabled = false;
+        retryBtnTimer = setTimeout(() => setRetryBtnState('idle'), 2500);
+      } else {
+        btn.textContent = '↻';
+        btn.disabled = false;
+      }
+    }
+
+    async function retryInitData() {
+      setRetryBtnState('busy');
+      const el = document.getElementById('loginStatusMsg');
+      if (el) el.innerText = 'กำลังลองเชื่อมต่อใหม่…';
+      const ok = await fetchInitData();
+      showInitDataStatus();
+      setRetryBtnState(ok ? 'ok' : 'idle');
+      if (ok && el) el.innerText = 'โหลดข้อมูลสำเร็จ';
     }
 
     // Shows the connection problem on the login card rather than leaving the
@@ -2041,17 +2143,61 @@
       return found ? found.points : 0;
     }
 
-    function syncPointsToSheet(name, mode, points) {
-      if (!sheetApiReady()) return;
-      // Fire-and-forget: never block gameplay waiting on the sheet.
+    // Scores that failed to send are parked here and retried, so a busy or
+    // slow API never silently loses a student's points.
+    const PENDING_KEY = 'plantProp.pendingScores.v1';
+
+    function readPendingScores() {
+      try {
+        const raw = localStorage.getItem(PENDING_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (err) { return []; }
+    }
+    function writePendingScores(list) {
+      try { localStorage.setItem(PENDING_KEY, JSON.stringify(list)); } catch (err) { /* storage unavailable */ }
+    }
+    function queueScore(entry) {
+      const list = readPendingScores();
+      list.push(entry);
+      writePendingScores(list.slice(-50)); // keep the queue bounded
+    }
+
+    async function postScore(entry) {
       // Sent without a custom Content-Type header on purpose - this keeps
       // it a CORS "simple request" so Apps Script Web Apps (which don't
       // handle OPTIONS preflight) can receive it directly.
-      fetch(SHEET_API_URL, {
+      const res = await fetchWithTimeout(SHEET_API_URL, API_TIMEOUT_MS, {
         method: 'POST',
-        body: JSON.stringify({ action: 'addPoints', name, mode, points }),
-        keepalive: true
-      }).catch((err) => console.warn('Could not sync points to sheet:', err));
+        body: JSON.stringify({ action: 'addPoints', ...entry })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return true;
+    }
+
+    async function flushPendingScores() {
+      if (!sheetApiReady()) return;
+      let list = readPendingScores();
+      if (list.length === 0) return;
+      const stillPending = [];
+      for (const entry of list) {
+        try { await postScore(entry); }
+        catch (err) { stillPending.push(entry); }
+      }
+      writePendingScores(stillPending);
+      if (stillPending.length === 0) refreshLeaderboard();
+    }
+
+    function syncPointsToSheet(name, mode, points) {
+      if (!sheetApiReady()) return;
+      const entry = { name, mode, points };
+
+      // Never block gameplay waiting on the sheet - but if it fails, park the
+      // score and try again rather than dropping it
+      postScore(entry)
+        .catch((err) => {
+          console.warn('Score send failed, queued for retry:', err);
+          queueScore(entry);
+        });
 
       // Keep the local cache in step so the leaderboard reflects it immediately
       const found = cachedLeaderboard.find((e) => e.name === name);
@@ -2116,7 +2262,8 @@
     async function refreshLeaderboard() {
       if (!sheetApiReady()) return;
       try {
-        const res = await fetch(`${SHEET_API_URL}?action=getLeaderboard`);
+        const res = await fetchWithTimeout(`${SHEET_API_URL}?action=getLeaderboard&t=${Date.now()}`, API_TIMEOUT_MS);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         cachedLeaderboard = data.leaderboard || [];
         initDataLoaded = true;
@@ -3340,15 +3487,26 @@
 
       const fetchDone = fetchInitData();
       const cap = new Promise((resolve) => setTimeout(resolve, MAX_WAIT_MS));
-      await Promise.race([fetchDone, cap]);
+      setRetryBtnState('busy');
+      const firstResult = await Promise.race([fetchDone, cap]);
 
       const elapsed = performance.now() - started;
       if (elapsed < MIN_WAIT_MS) {
         await new Promise((r) => setTimeout(r, MIN_WAIT_MS - elapsed));
       }
       showInitDataStatus();
+      setRetryBtnState(firstResult === true ? 'ok' : 'idle');
       showAppScreen('screenLogin');
+
+      // Send anything that failed to reach the sheet on a previous visit
+      flushPendingScores();
     })();
+
+    // Retry parked scores when the tab comes back into view or the network returns
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) flushPendingScores();
+    });
+    window.addEventListener('online', flushPendingScores);
 
   </script>
 </body>
