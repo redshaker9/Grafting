@@ -227,6 +227,7 @@
     }
     .bench-head .packet-kicker { color: #DDECC8; }
     .bench-hint { color: #E9F3DA; font-size: .9rem; margin-bottom: 12px; }
+    .stat-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .score-chip {
       display: flex; align-items: center; gap: 7px;
       background: var(--paper); color: var(--ink);
@@ -301,7 +302,10 @@
       font-size: .82rem; font-weight: 700; color: var(--ink);
       margin-top: 5px; text-align: center; word-break: break-word;
     }
-    .pod-score { font-size: .78rem; color: var(--ink-soft); }
+    .pod-score {
+      display: flex; align-items: center; gap: 4px;
+      font-size: .78rem; font-weight: 700; color: #7A5A10;
+    }
     .pod-1 { padding-bottom: 24px; }
     .pod-2 { padding-bottom: 16px; }
 
@@ -313,7 +317,24 @@
     }
     .rank-no { font-size: .82rem; font-weight: 700; color: var(--ink-soft); width: 1.6rem; }
     .rank-name { flex: 1; font-size: .9rem; color: var(--ink); }
-    .rank-score { font-size: .88rem; font-weight: 700; color: var(--clay-dark); }
+    .stat-ico { width: 13px; height: 13px; flex-shrink: 0; }
+    /* Emoji needs its own sizing to sit level with the SVG star next to it */
+    .stat-emoji { font-size: 12px; line-height: 1; flex-shrink: 0; }
+    .chip-emoji { font-size: 18px; line-height: 1; flex-shrink: 0; }
+    .rank-score {
+      display: flex; align-items: center; gap: 5px;
+      font-size: .88rem; font-weight: 700; color: #8A6410;
+      min-width: 3.8rem; justify-content: flex-end;
+    }
+    .rank-plants {
+      display: flex; align-items: center; gap: 5px;
+      font-size: .82rem; font-weight: 700; color: #3F6B33;
+      min-width: 2.8rem; justify-content: flex-end;
+    }
+    .pod-plants {
+      display: flex; align-items: center; gap: 4px;
+      font-size: .74rem; font-weight: 700; color: #3F6B33; margin-top: 2px;
+    }
     .rank-row-me { background: #FBF0D6; border-color: rgba(180, 105, 62, .5); }
     .empty-note { text-align: center; color: var(--ink-soft); font-size: .88rem; padding: 14px 0; }
 
@@ -457,6 +478,18 @@
 </head>
 <body class="relative w-screen h-screen overflow-hidden select-none">
 
+  <!-- Shared icon gradients. Defined once so the star and sprout read the
+       same everywhere they appear (profile chips, podium, ranked list). -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <defs>
+      <linearGradient id="goldGrad" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0"    stop-color="#FFEFB0"/>
+        <stop offset="0.35" stop-color="#F6C64A"/>
+        <stop offset="1"    stop-color="#B9770E"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
   <!-- ============================================================
        APP SHELL: loading -> login -> mode select, wraps the game.
        Sits on top of everything (z-[100]) until a mode is entered.
@@ -543,10 +576,17 @@
           <p class="packet-kicker">ยินดีต้อนรับ</p>
           <h2 id="playerNameDisplay" class="bench-name">-</h2>
         </div>
-        <div class="score-chip">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M12 2.6l2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 16.8 6.4 19.9l1.2-6.3L3 9.2l6.3-.8z" fill="#E8A33D"/></svg>
-          <span id="menuPointsValue">0</span>
-          <span class="score-unit">คะแนน</span>
+        <div class="stat-chips">
+          <div class="score-chip">
+            <span class="chip-emoji">🌱</span>
+            <span id="menuPlantsValue">0</span>
+            <span class="score-unit">ต้น</span>
+          </div>
+          <div class="score-chip">
+            <svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true"><path d="M12 2.6l2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 16.8 6.4 19.9l1.2-6.3L3 9.2l6.3-.8z" fill="url(#goldGrad)" stroke="rgba(120,74,8,.4)" stroke-width="1"/></svg>
+            <span id="menuPointsValue">0</span>
+            <span class="score-unit">คะแนน</span>
+          </div>
         </div>
       </div>
 
@@ -952,6 +992,20 @@
     // resting perfectly still fires no move events, so without this the
     // "pointer is live" check would time out and reset the dwell gauges.
     let pointerHeld = false;
+    // True once a mouse has been used. Unlike a finger, a mouse cursor stays
+    // on screen when it stops moving - so hovering still should keep counting.
+    let mouseActive = false;
+
+    // Whether there is a pointer present right now, judged per input type:
+    //  - hand tracking: times out, because a hand can leave the camera view
+    //  - mouse: persists once seen, even when held perfectly still
+    //  - touch: only while a finger is actually down
+    function isPointerLive() {
+      if (handPos.detected) {
+        return (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      }
+      return pointerHeld || mouseActive;
+    }
     function updateWorldPos() {
       worldPos.x = screenToWorldX(handPos.x);
       worldPos.y = screenToWorldY(handPos.y);
@@ -961,7 +1015,7 @@
 
     // Mouse Fallback (เผื่อกล้อง AR ไม่ทำงาน หรือใช้บน PC ปกติ)
     window.addEventListener('mousemove', (e) => {
-      if (!handPos.detected) { handPos.x = e.clientX; handPos.y = e.clientY; handPos.lastUpdate = performance.now(); }
+      if (!handPos.detected) { handPos.x = e.clientX; handPos.y = e.clientY; handPos.lastUpdate = performance.now(); mouseActive = true; }
     });
     canvas.addEventListener('mousedown', (e) => {
       pointerHeld = true;
@@ -998,6 +1052,7 @@
         return;
       }
       pointerHeld = true;
+      mouseActive = false;
       if (!handPos.detected) {
         const t = e.touches[0];
         if (t) {
@@ -1079,7 +1134,7 @@
     let toolHoverConfirmed = {};
 
     function processToolHover(dtMs) {
-      const pointerLive = pointerHeld || (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const pointerLive = isPointerLive();
 
       document.querySelectorAll('.tool-card').forEach(card => {
         const toolId = card.getAttribute('data-tool');
@@ -1221,7 +1276,7 @@
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       const radius = rect.width / 2;
-      const pointerLive = pointerHeld || (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const pointerLive = isPointerLive();
       const hovering = pointerLive && Math.hypot(handPos.x - cx, handPos.y - cy) < radius;
 
       if (hovering) {
@@ -1293,7 +1348,7 @@
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       const radius = rect.width / 2;
-      const pointerLive = pointerHeld || (performance.now() - handPos.lastUpdate) < POINTER_LIVE_TIMEOUT_MS;
+      const pointerLive = isPointerLive();
       const hovering = pointerLive && Math.hypot(handPos.x - cx, handPos.y - cy) < radius;
 
       if (hovering) {
@@ -1451,7 +1506,7 @@
         else if (currentStep === 2) desc.innerText = "เลือก [กรรไกร ✂️] ตัดยอดลำต้นต้นตอทิ้ง (เหนือรากขึ้นไปประมาณ 20 ซม.) - จุดบนลำต้น";
         else if (currentStep === 3) desc.innerText = "ใช้ [กรรไกร ✂️] ตัดรากแขนงออก ให้เหลือแต่รากแก้วเส้นเดียว - จุดที่ราก";
         else if (currentStep === 4) desc.innerText = "เลือก [มีด 🔪] เปิดแผลที่ปลายกิ่งโค้งของต้นแม่ (ซ้าย)";
-        else if (currentStep === 5) desc.innerText = "เลือก [มือจับ 🖐️] นำต้นตอที่เตรียมไว้ ไปทาบกับแผลบนกิ่งของต้นแม่";
+        else if (currentStep === 5) desc.innerText = "เลือก [มือจับ 🖐️] จับที่ปลายบนของต้นตอ (รอยตัดเฉียง) นำไปทาบกับแผลบนกิ่งของต้นแม่";
         else if (currentStep === 6) desc.innerText = "เลือก [เทปพลาสติก 🩹] พันรอยทาบให้แน่น";
         else if (currentStep === 7) desc.innerText = "เลือก [ตุ้มขุยมะพร้าว 🥥] นำมาใส่ตรงรากแก้วที่ห้อยอยู่";
         else if (currentStep === 8) desc.innerText = "เลือก [ฝักบัวรดน้ำ 🚿] รดน้ำตุ้มขุยมะพร้าวให้ชื้น";
@@ -1692,15 +1747,27 @@
             simState.inarchBranchWounded = true; currentStep = 5; updateStepUI();
           }
         }
-        // Step 5: carry the prepared rootstock over to approach the wound
+        // Step 5: carry the prepared rootstock over to approach the wound.
+        // It's picked up around the middle of the stem, but the drop is
+        // judged by where its CUT FACE lands - that's the surface that has
+        // to meet the wound, and the indicator moves there once it's held.
         else if (currentStep === 5 && selectedTool === 'hand') {
+          const grabPoint = {
+            x: simState.inarchRootstockPos.x,
+            y: simState.inarchRootstockPos.y + INARCH_GRAB_DY
+          };
+          const cutFace = {
+            x: simState.inarchRootstockPos.x,
+            y: simState.inarchRootstockPos.y + INARCH_CUT_FACE_DY
+          };
           if (isPinch && !simState.inarchApproached) {
-            if (Math.hypot(worldPos.x - simState.inarchRootstockPos.x, worldPos.y - simState.inarchRootstockPos.y) < 90 || simState.inarchRootstockHeld) {
+            if (Math.hypot(worldPos.x - grabPoint.x, worldPos.y - grabPoint.y) < 90 || simState.inarchRootstockHeld) {
               simState.inarchRootstockHeld = true;
-              simState.inarchRootstockPos = { x: worldPos.x, y: worldPos.y };
+              simState.inarchRootstockPos = { x: worldPos.x, y: worldPos.y - INARCH_GRAB_DY };
             }
           } else if (!isPinch && simState.inarchRootstockHeld) {
-            if (Math.hypot(worldPos.x - union.x, worldPos.y - union.y) < 100) {
+            // it's the cut face - not the hand - that has to land on the wound
+            if (Math.hypot(cutFace.x - union.x, cutFace.y - union.y) < 110) {
               simState.inarchRootstockHeld = false;
               simState.inarchApproached = true;
               simState.inarchRootstockPos = getInarchingUnionRestPos();
@@ -1744,7 +1811,10 @@
           const cutPos = getInarchingCutPos();
           if (Math.hypot(worldPos.x - cutPos.x, worldPos.y - cutPos.y) < 90) {
             simState.inarchHarvested = true;
-            simState.inarchRootstockPos = getInarchingUnionRestPos();
+            // Shift the freed piece clear of the stub - sitting in exactly the
+            // same spot made it look like the cut hadn't happened
+            const rest = getInarchingUnionRestPos();
+            simState.inarchRootstockPos = { x: rest.x + 30, y: rest.y + 44 };
             currentStep = 12; updateStepUI(); spawnLeafParticles(cutPos.x, cutPos.y);
           }
         }
@@ -1896,6 +1966,12 @@
     // diagonal branch it's pressed against. Used by both the position math
     // below and the actual rotation in drawInarchingRootstockAt.
     const INARCH_APPROACH_TILT_DEG = 30; // nearly parallel to the diagonal branch (~32.7°)
+    // How far the rootstock's diagonal cut face sits above its base point
+    // (150 local units at the default 0.9 scale)
+    const INARCH_CUT_FACE_DY = -135;
+    // The stem is grabbed around its middle, but it's the cut face at the top
+    // that has to meet the wound - so the indicator moves up there once held.
+    const INARCH_GRAB_DY = INARCH_CUT_FACE_DY / 2;
 
     // Rotates a local offset (dx, dy) by tiltDeg and adds it to basePos - used
     // to find where a point rigidly attached to the rootstock (like its cut
@@ -1935,12 +2011,18 @@
     // Student points (session-based for now - per-student persistence is a
     // planned future addition, not implemented yet).
     let studentPoints = 0;
+    let studentPlants = 0; // one finished run = one plant propagated
     function updatePointsDisplay() {
       const el = document.getElementById('pointsValue');
       if (el) el.innerText = studentPoints;
+      const menuPts = document.getElementById('menuPointsValue');
+      if (menuPts) menuPts.innerText = studentPoints;
+      const menuPlants = document.getElementById('menuPlantsValue');
+      if (menuPlants) menuPlants.innerText = studentPlants;
     }
     function awardPoints(amount) {
       studentPoints += amount;
+      studentPlants += 1;
       updatePointsDisplay();
       if (currentPlayerName) syncPointsToSheet(currentPlayerName, currentMode, amount);
     }
@@ -2017,9 +2099,8 @@
       applyModePictures(data.pictures);
       if (currentPlayerName) {
         studentPoints = lookupPointsFor(currentPlayerName);
+        studentPlants = lookupPlantsFor(currentPlayerName);
         updatePointsDisplay();
-        const menuEl = document.getElementById('menuPointsValue');
-        if (menuEl) menuEl.innerText = studentPoints;
       }
     }
 
@@ -2142,6 +2223,10 @@
       const found = cachedLeaderboard.find((e) => e.name === name);
       return found ? found.points : 0;
     }
+    function lookupPlantsFor(name) {
+      const found = cachedLeaderboard.find((e) => e.name === name);
+      return found ? (found.plants || 0) : 0;
+    }
 
     // Scores that failed to send are parked here and retried, so a busy or
     // slow API never silently loses a student's points.
@@ -2156,9 +2241,12 @@
     function writePendingScores(list) {
       try { localStorage.setItem(PENDING_KEY, JSON.stringify(list)); } catch (err) { /* storage unavailable */ }
     }
+    const MAX_SCORE_ATTEMPTS = 4;
+    let flushInProgress = false;
+
     function queueScore(entry) {
       const list = readPendingScores();
-      list.push(entry);
+      list.push({ ...entry, attempts: entry.attempts || 0 });
       writePendingScores(list.slice(-50)); // keep the queue bounded
     }
 
@@ -2175,21 +2263,45 @@
     }
 
     async function flushPendingScores() {
-      if (!sheetApiReady()) return;
+      if (!sheetApiReady() || flushInProgress) return;
       let list = readPendingScores();
       if (list.length === 0) return;
+      flushInProgress = true;   // stops a second flush piling on top
       const stillPending = [];
-      for (const entry of list) {
-        try { await postScore(entry); }
-        catch (err) { stillPending.push(entry); }
+      try {
+        for (const entry of list) {
+          const attempts = (entry.attempts || 0) + 1;
+          try {
+            await postScore(entry);
+          } catch (err) {
+            // The row may well have saved and only the reply went missing -
+            // the server ignores repeats by id, so a few tries is plenty.
+            // Past that, stop retrying rather than queue it forever.
+            if (attempts < MAX_SCORE_ATTEMPTS) {
+              stillPending.push({ ...entry, attempts });
+            } else {
+              console.warn('Giving up on queued score after', attempts, 'attempts:', entry);
+            }
+          }
+        }
+      } finally {
+        writePendingScores(stillPending);
+        flushInProgress = false;
       }
-      writePendingScores(stillPending);
       if (stillPending.length === 0) refreshLeaderboard();
+    }
+
+    // One finished run gets one id, generated once and kept through every
+    // retry. The server uses it to ignore repeats - without this, a send that
+    // saved the row but failed to report back would be retried and counted
+    // twice.
+    function makeScoreId() {
+      return 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
     }
 
     function syncPointsToSheet(name, mode, points) {
       if (!sheetApiReady()) return;
-      const entry = { name, mode, points };
+      const entry = { name, mode, points, id: makeScoreId() };
 
       // Never block gameplay waiting on the sheet - but if it fails, park the
       // score and try again rather than dropping it
@@ -2201,10 +2313,16 @@
 
       // Keep the local cache in step so the leaderboard reflects it immediately
       const found = cachedLeaderboard.find((e) => e.name === name);
-      if (found) found.points += points;
-      else cachedLeaderboard.push({ name: name, points: points });
+      if (found) { found.points += points; found.plants = (found.plants || 0) + 1; }
+      else cachedLeaderboard.push({ name: name, points: points, plants: 1 });
       cachedLeaderboard.sort((a, b) => b.points - a.points);
     }
+
+    // Reusable inline icons, drawing on the shared gradients in <defs>
+    const ICON_STAR = '<svg viewBox="0 0 24 24" class="stat-ico" aria-hidden="true">'
+      + '<path d="M12 2.6l2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 16.8 6.4 19.9l1.2-6.3L3 9.2l6.3-.8z"'
+      + ' fill="url(#goldGrad)" stroke="rgba(120,74,8,.45)" stroke-width="1"/></svg>';
+    const ICON_SPROUT = '<span class="stat-emoji">🌱</span>';
 
     function escapeHtml(str) {
       return String(str).replace(/[&<>"']/g, (c) => (
@@ -2242,7 +2360,8 @@
           <div class="pod pod-${idx + 1}">
             <span class="pod-medal">${medals[idx]}</span>
             <span class="pod-name">${escapeHtml(top[idx].name)}</span>
-            <span class="pod-score">${top[idx].points}</span>
+            <span class="pod-score">${ICON_STAR}${top[idx].points}</span>
+            <span class="pod-plants">${ICON_SPROUT}${top[idx].plants || 0}</span>
           </div>
         `).join('');
 
@@ -2253,7 +2372,8 @@
             <div class="rank-row${entry.name === currentPlayerName ? ' rank-row-me' : ''}">
               <span class="rank-no">${i + 4}</span>
               <span class="rank-name">${escapeHtml(entry.name)}</span>
-              <span class="rank-score">${entry.points}</span>
+              <span class="rank-score">${ICON_STAR}${entry.points}</span>
+              <span class="rank-plants">${ICON_SPROUT}${entry.plants || 0}</span>
             </div>
           `).join('');
     }
@@ -2296,14 +2416,15 @@
       // Read from the cache so login is instant - if the data hasn't landed
       // yet, fetchInitData() fills the points in as soon as it arrives.
       studentPoints = lookupPointsFor(name);
+      studentPlants = lookupPlantsFor(name);
       updatePointsDisplay();
       document.getElementById('playerNameDisplay').innerText = name;
-      document.getElementById('menuPointsValue').innerText = studentPoints;
       showAppScreen('screenModeSelect');
     }
     function logoutPlayer() {
       currentPlayerName = null;
       studentPoints = 0;
+      studentPlants = 0;
       updatePointsDisplay();
       document.getElementById('guestNameInput').value = '';
       document.getElementById('studentDropdown').value = '';
@@ -2324,7 +2445,7 @@
     }
     function backToModeSelect() {
       document.getElementById('appShell').classList.remove('hidden');
-      document.getElementById('menuPointsValue').innerText = studentPoints;
+      updatePointsDisplay();
       showAppScreen('screenModeSelect');
     }
 
@@ -2587,14 +2708,24 @@
     // The mother tree's branch for inarching - drawn as its own straight
     // diagonal stroke (instead of the shared drawStylizedTree's horizontal
     // branch), angled up and to the right.
-    function drawDiagonalBranch(origin, tip, showLeaves = true) {
+    function drawDiagonalBranch(origin, tip, showLeaves = true, cutAtTip = false) {
+      const halfW = 10;
+      // A round cap bulges half a width past the line's end. Rather than
+      // squaring the limb off (which looks blunt), the line is pulled back by
+      // that much so the rounded wood stops right at the cut face.
+      let drawTip = tip;
+      if (cutAtTip) {
+        const dx = tip.x - origin.x, dy = tip.y - origin.y;
+        const len = Math.hypot(dx, dy) || 1;
+        drawTip = { x: tip.x - (dx / len) * halfW, y: tip.y - (dy / len) * halfW };
+      }
       ctx.save();
-      ctx.strokeStyle = barkStrokeGradient(origin, tip, 43);
+      ctx.strokeStyle = barkStrokeGradient(origin, drawTip, 43);
       ctx.lineWidth = 43;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(origin.x, origin.y);
-      ctx.lineTo(tip.x, tip.y);
+      ctx.lineTo(drawTip.x, drawTip.y);
       ctx.stroke();
       ctx.restore();
       if (showLeaves) {
@@ -2604,16 +2735,20 @@
       }
     }
 
-    // A flat cross-section cap overlaid right at a cut point, perpendicular
-    // to the branch's direction - so that specific end reads as a clean
-    // straight cut, while the branch's other end (e.g. where it meets the
-    // trunk) keeps its natural rounded look.
-    function drawFlatCutCap(pos, branchAngle, branchWidth) {
+    // Overlaid right at a cut point so that end reads as a fresh cut, while
+    // the limb's other end (e.g. where it meets the trunk) keeps its natural
+    // rounded look.
+    // A cut face across an angled limb. Uses the same sapwood-and-bark-ring
+    // treatment as paintCutFace (the one the cutting mode uses), rotated so
+    // it sits square across the limb rather than axis-aligned.
+    function paintBranchCutFace(pos, branchAngle, branchWidth) {
+      const halfW = branchWidth / 2;
       ctx.save();
       ctx.translate(pos.x, pos.y);
-      ctx.rotate(branchAngle + Math.PI / 2);
-      ctx.fillStyle = "#fef3c7";
-      ctx.fillRect(-branchWidth / 2, -3, branchWidth, 6);
+      ctx.rotate(branchAngle);
+      // narrow along the limb, full width across it - same 1:2 proportion
+      // the straight branches use
+      paintCutFace(0, 0, halfW * 0.6, halfW);
       ctx.restore();
     }
 
@@ -2657,21 +2792,31 @@
     // attached to the harvested rootstock, once cut at the branch's base.
     // Drawn at the same angle/length as the original branch, starting from
     // the rootstock's diagonal cut face.
-    function drawHarvestedBranchSegment(startPos, angle, length, tapeFrac = null, sizeMultiplier = 1, leafTier = 1, widthMultiplier = null) {
+    function drawHarvestedBranchSegment(startPos, angle, length, tapeFrac = null, sizeMultiplier = 1, leafTier = 1, widthMultiplier = null, showCutFace = true) {
       const w = widthMultiplier !== null ? widthMultiplier : sizeMultiplier;
       const startX = startPos.x;
       const startY = startPos.y;
       const endX = startX + Math.cos(angle) * length;
       const endY = startY + Math.sin(angle) * length;
+      // Same trick as the branch stub: keep the rounded wood, but start the
+      // line half a width in so the cap ends flush with the cut face
+      const halfW = 10 * w;
+      const drawStartX = showCutFace ? startX + Math.cos(angle) * halfW : startX;
+      const drawStartY = showCutFace ? startY + Math.sin(angle) * halfW : startY;
       ctx.save();
-      ctx.strokeStyle = barkStrokeGradient({ x: startX, y: startY }, { x: endX, y: endY }, 43 * w);
+      ctx.strokeStyle = barkStrokeGradient({ x: drawStartX, y: drawStartY }, { x: endX, y: endY }, 43 * w);
       ctx.lineWidth = 43 * w;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(startX, startY);
+      ctx.moveTo(drawStartX, drawStartY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
       ctx.restore();
+
+      // The lower end is where this piece was severed from the mother tree,
+      // so it carries the same fresh sapwood face as the stub left behind.
+      // Once it's been planted the wound is underground, so it's dropped.
+      if (showCutFace) paintBranchCutFace({ x: startX, y: startY }, angle, 43 * w);
 
       if (tapeFrac !== null) {
         // The graft union & its tape travel with the harvested piece - sits
@@ -2788,6 +2933,17 @@
       ctx.beginPath(); ctx.arc(x, y, pulse, 0, Math.PI*2); ctx.stroke();
       ctx.fillStyle = "#4ade80"; ctx.font = "bold 14px Kanit"; ctx.textAlign = "center";
       ctx.fillText(text, x, y - pulse - 12);
+    }
+
+    // A still ring - marks a point on something the person is already
+    // holding, without competing with the pulsing destination target.
+    function drawStaticTarget(x, y) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.85)";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.arc(x, y, 17, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
     }
 
     // Centralized coordinates for the grafting mode: the rootstock's cleft
@@ -3110,15 +3266,15 @@
         // short STUB (origin to the cut point) is left behind, with no
         // leaves - the leafy portion beyond the cut came away with the graft.
         // The trunk-side end keeps its natural round cap; only the cut end
-        // gets a flat cross-section cap overlaid on top.
+        // gets a fresh sapwood face overlaid on top.
         drawStylizedTree(WORLD_W * 0.35, groundY, 2.0, { showLeaves: true, branchCut: true, hideBranch: true, showPot: false, plantedInGround: true, trunkWidthScale: 2, leftBranchLength: 125 });
         drawPotLabel(WORLD_W * 0.35, groundY + 40, "ต้นพันธุ์ดี", 'scion');
         drawPotLabel(potPos.x, potPos.y + 38, "ต้นตอ", 'stock');
         if (!simState.inarchHarvested) {
           drawDiagonalBranch(origin, tip, true);
         } else {
-          drawDiagonalBranch(origin, cutPos, false);
-          drawFlatCutCap(cutPos, branchAngle, 43);
+          drawDiagonalBranch(origin, cutPos, false, true);
+          paintBranchCutFace(cutPos, branchAngle, 43);
         }
 
         // The rootstock, through its full lifecycle. Show the bare-root
@@ -3196,7 +3352,7 @@
             const mainBranchLen = baseBranchLen * heightScale;
             // union sits a stub-length above the segment's lower end
             const plantedSegStart = { x: plantedAttachPos.x, y: plantedAttachPos.y + plantedStub };
-            drawHarvestedBranchSegment(plantedSegStart, -Math.PI / 2, mainBranchLen, plantedStub / mainBranchLen, 1, leafTier);
+            drawHarvestedBranchSegment(plantedSegStart, -Math.PI / 2, mainBranchLen, plantedStub / mainBranchLen, 1, leafTier, null, false);
 
             // A new side branch sprouts diagonally upward, with small leaves,
             // as the plant matures from watering
@@ -3244,12 +3400,21 @@
         else if (currentStep === 2) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y - 135, "ตัดยอด");
         else if (currentStep === 3) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 45, "ตัดรากแขนง");
         else if (currentStep === 4) drawPulseTarget(union.x, union.y, "เปิดแผล");
-        else if (currentStep === 5) !simState.inarchRootstockHeld ? drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y, "จับต้นตอ") : drawPulseTarget(union.x, union.y, "นำมาทาบ");
+        else if (currentStep === 5) {
+          if (!simState.inarchRootstockHeld) {
+            drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + INARCH_GRAB_DY, "จับกิ่งไม้");
+          } else {
+            // where it has to go...
+            drawPulseTarget(union.x, union.y, "นำมาทาบ");
+            // ...and which end of what they're holding has to get there
+            drawStaticTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + INARCH_CUT_FACE_DY);
+          }
+        }
         else if (currentStep === 6) drawPulseTarget(union.x, union.y, "พันเทป");
         else if (currentStep === 7) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 44, "ใส่ตุ้ม");
         else if (currentStep === 8) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 44, "รดน้ำ");
         else if (currentStep === 9) drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y + 44, "พันเทป");
-        else if (currentStep === 11) drawPulseTarget(cutPos.x, cutPos.y, "ตัด(ใต้เทปนิดเดียว)");
+        else if (currentStep === 11) drawPulseTarget(cutPos.x, cutPos.y, "ตัดกิ่งไม้");
         else if (currentStep === 12) !simState.inarchRootstockHeld ? drawPulseTarget(simState.inarchRootstockPos.x, simState.inarchRootstockPos.y, "จับกิ่ง") : drawPulseTarget(potPos.x, potPos.y, "ปักลงกระถาง");
         else if (currentStep === 13) drawPulseTarget(potPos.x, potPos.y - 60, "รดน้ำ");
 
